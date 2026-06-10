@@ -26,16 +26,12 @@ import { estado } from "./commands/owner/mantenimiento.js";
 import { getSesionJuego } from "./commands/juegos/numjuego.js";
 import { loadDB, saveDB, getUser, saveNombre, numId } from "./commands/economia/db.js";
 
-// ─── Constantes ───────────────────────────────────────────────────────────────
 const MSG_STORE_LIMIT = 1000;
 const OWNER           = "573223090406@s.whatsapp.net";
 const SESSION_FILE    = "./session_phone.json";
 const MAX_RETRIES     = 5;
-
-// Delay base entre reconexiones (ms). Se duplica con cada intento (backoff exponencial).
 const BASE_RECONNECT_DELAY = 3000;
 
-// Comandos que manejan sus propias reacciones
 const SELF_REACT_CMDS = new Set([
   "tt", "tiktok", "ttsearch",
   "fb", "facebook", "fbmp4",
@@ -45,18 +41,6 @@ const SELF_REACT_CMDS = new Set([
   "applemusic", "amusic", "apple", "am",
 ]);
 
-// ─── Logger silencioso definitivo ─────────────────────────────────────────────
-// Bloquea los sub-loggers internos de Baileys para que no spameen sesiones
-function crearLoggerSilencioso() {
-  const noop = () => {};
-  const logger = {
-    level: "silent",
-    trace: noop, debug: noop, info: noop,
-    warn:  noop, error: noop, fatal: noop,
-  };
-  logger.child = () => logger;
-  return logger;
-}
 function crearLoggerSilencioso() {
   const noop = () => {};
   const logger = {
@@ -68,23 +52,18 @@ function crearLoggerSilencioso() {
   return logger;
 }
 
-
-// ─── Estado global ────────────────────────────────────────────────────────────
 let sock             = null;
 let reconnectTimer   = null;
 let sessionRetries   = 0;
-let eventosRegistrados = false; // ← evita registrar listeners de grupo duplicados
+let eventosRegistrados = false;
 let commands         = {};
 
-// Set con TTL para deduplicar mensajes (limpieza automática, no depende de reconexión)
 const mensajesProcesados = new Set();
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
 await fs.ensureDir(TEMP_DIR);
 commands = await loadCommands();
 console.log(`✅ ${Object.keys(commands).length} comandos cargados:`, Object.keys(commands).join(", "));
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function askQuestion(prompt) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -122,29 +101,22 @@ async function clearSession() {
       await fs.remove(CONFIG.sessionDir);
       console.log("🗑️  Sesión borrada.");
     }
-    // Recrear carpeta vacía para evitar ENOENT en saveCreds
     await fs.ensureDir(CONFIG.sessionDir);
   } catch (e) {
     console.error("No se pudo borrar la sesión:", e.message);
   }
 }
 
-// Destruir socket actual limpiamente
 function destroySock() {
   if (!sock) return;
   try { sock.ev.removeAllListeners(); } catch {}
-  try { sock.ws?.terminate();          } catch {} // terminate() es más agresivo que close()
+  try { sock.ws?.terminate();          } catch {}
   try { sock.end(undefined);           } catch {}
   sock = null;
 }
 
-/**
- * Programa reconexión con backoff exponencial.
- * - Si ya hay un timer activo, NO acumula otro.
- * - delay = BASE * 2^(intentos-1), máx 30 segundos.
- */
 function scheduleReconnect() {
-  if (reconnectTimer) return; // ya hay uno pendiente, no duplicar
+  if (reconnectTimer) return;
 
   const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(2, sessionRetries - 1), 30_000);
   console.log(`⏳ Reconectando en ${(delay / 1000).toFixed(1)}s... (intento ${sessionRetries}/${MAX_RETRIES})`);
@@ -155,7 +127,6 @@ function scheduleReconnect() {
   }, delay);
 }
 
-// ─── Detección de tipo y body del mensaje ─────────────────────────────────────
 function getMsgInfo(msg) {
   const m = msg.message;
   if (!m) return { tipo: "vacío", detalle: "", body: "" };
@@ -179,15 +150,12 @@ function getMsgInfo(msg) {
   return { tipo: "desconocido", detalle: "", body };
 }
 
-// ─── Bot ──────────────────────────────────────────────────────────────────────
 async function startBot() {
-  // 1. Siempre destruir instancia anterior
   destroySock();
 
   const PHONE_NUMBER = await getPhoneNumber();
   await fs.ensureDir(CONFIG.sessionDir);
 
-  // 2. Cargar sesión (con auto-reparación)
   let state, saveCreds;
   try {
     ({ state, saveCreds } = await useMultiFileAuthState(CONFIG.sessionDir));
@@ -205,19 +173,15 @@ async function startBot() {
 
   const { version } = await fetchLatestBaileysVersion();
 
-  // 3. Crear socket con logger completamente silencioso
-  //    Esto elimina el spam de "Closing session" y rotaciones Signal
   sock = makeWASocket({
     version,
     browser: Browsers.ubuntu("Chrome"),
     logger: crearLoggerSilencioso(),
     auth: state,
     printQRInTerminal: false,
-    // Devolver mensaje del store si existe, evita errores de descifrado
     getMessage: async (key) => {
       return sock?.msgStore?.get(key.id)?.message ?? { conversation: "" };
     },
-    // Opciones de reconexión de bajo nivel
     connectTimeoutMs: 60_000,
     keepAliveIntervalMs: 25_000,
     retryRequestDelayMs: 2000,
@@ -225,10 +189,8 @@ async function startBot() {
 
   sock.msgStore = new Map();
 
-  // 4. Guardar credenciales en cada cambio
   sock.ev.on("creds.update", saveCreds);
 
-  // 5. Pedir código de vinculación solo si no hay sesión
   const credsPath  = `${CONFIG.sessionDir}/creds.json`;
   const yaHayCreds = await fs.pathExists(credsPath);
 
@@ -250,9 +212,6 @@ async function startBot() {
     console.log("🔄 Sesión en disco encontrada, reconectando sin pedir código...");
   }
 
-  // 6. Registrar eventos de grupo UNA SOLA VEZ
-  //    (Si se llama setupWelcomeEvent en cada reconexión, acumulas listeners duplicados
-  //     que pueden causar comportamientos raros o crashes)
   if (!eventosRegistrados) {
     eventosRegistrados = true;
     setupAutoPromote(sock);
@@ -261,16 +220,12 @@ async function startBot() {
     iniciarCronBuenasNoches(sock);
   }
 
-  // ── Conexión ────────────────────────────────────────────────────────────────
   sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
-
-    // QR inesperado (no debería pasar con pairing code, pero por si acaso)
     if (qr) {
       console.log("⚠️  Se generó QR inesperado. Usa el código de vinculación.");
     }
 
     if (connection === "open") {
-      // Resetear contadores al conectar exitosamente
       sessionRetries = 0;
       reconnectTimer = null;
       console.log(`\n✅ ${CONFIG.botName} conectado!`);
@@ -284,19 +239,16 @@ async function startBot() {
       console.log(`❌ Conexión cerrada. Código: ${statusCode ?? "desconocido"}`);
       if (err?.message) console.log(`   Motivo: ${err.message}`);
 
-      // ── Casos donde NO se debe reconectar ───────────────────────────────
       if (statusCode === DisconnectReason.loggedOut) {
         console.log("🗑️  Sesión cerrada por WhatsApp. Borrando y reiniciando...");
         await clearSession();
-        // Resetear para que el próximo intento parta de 0
         sessionRetries = 0;
-        eventosRegistrados = false; // forzar re-registro de eventos con nueva sesión
+        eventosRegistrados = false;
         scheduleReconnect();
         return;
       }
 
       if (statusCode === DisconnectReason.connectionReplaced) {
-        // Otra instancia activa — evitar conflicto, salir
         console.log("⚠️  Bot abierto en otro dispositivo/instancia. Cerrando.");
         destroySock();
         process.exit(0);
@@ -304,13 +256,11 @@ async function startBot() {
       }
 
       if (statusCode === 405) {
-        // Cuenta baneada o acción no permitida por WhatsApp
         console.error("🚫 Cuenta restringida por WhatsApp (405). No se reconecta.");
         destroySock();
         return;
       }
 
-      // ── Reconexión con backoff ───────────────────────────────────────────
       if (sessionRetries < MAX_RETRIES) {
         sessionRetries++;
         scheduleReconnect();
@@ -321,7 +271,6 @@ async function startBot() {
     }
   });
 
-  // ── Mensajes ─────────────────────────────────────────────────────────────────
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
 
@@ -329,20 +278,17 @@ async function startBot() {
       const stanzaId = msg?.key?.id;
       if (!stanzaId) continue;
 
-      // Deduplicación — ignorar si ya procesamos este ID
       if (mensajesProcesados.has(stanzaId)) continue;
 
       try {
         if (!msg?.message) continue;
 
-        // Marcar como procesado con TTL de 2 minutos
         mensajesProcesados.add(stanzaId);
         setTimeout(() => mensajesProcesados.delete(stanzaId), 120_000);
 
         let jid = msg.key.remoteJid;
         if (!jid) continue;
 
-        // Resolver LID → JID real
         if (jid.endsWith("@lid")) {
           if (msg.key?.senderPn) {
             jid = msg.key.senderPn.includes("@")
@@ -361,13 +307,11 @@ async function startBot() {
           msg.message?.conversation ||
           msg.message?.extendedTextMessage?.text || "";
 
-        // Ignorar mensajes propios que no sean comandos
         if (msg.key.fromMe && !tempBody.startsWith(CONFIG.prefix)) continue;
 
         const isGroup             = jid.endsWith("@g.us");
         const { tipo, detalle, body } = getMsgInfo(msg);
 
-        // Logger de consola
         console.log("=".repeat(70));
         console.log(`📩 DE: ${sender} | 📱 CHAT: ${jid}`);
         console.log(`🆔 ID: ${stanzaId}`);
@@ -376,25 +320,18 @@ async function startBot() {
 
         if (!body && !msg.message?.documentMessage) continue;
 
-        // Guardar en msgStore para descifrado de mensajes referenciados
         sock.msgStore.set(stanzaId, msg);
         if (sock.msgStore.size > MSG_STORE_LIMIT) {
           sock.msgStore.delete(sock.msgStore.keys().next().value);
         }
 
-        // Auto-forward documentos
         await checkAutoForward(sock, msg);
 
-        // Anti-link
         if (await checkAntiLink(sock, msg, jid, sender, body)) continue;
-
-        // Anti-spam
         if (await checkAntispam(sock, msg, jid, sender)) continue;
 
-        // Grupos permitidos
         if (isGroup && !isOwner && !await grupoPermitido(jid)) continue;
 
-        // Modo mantenimiento
         if (estado.mantenimiento && !isOwner) {
           await reply(sock, jid,
             `🔧 *El bot está en mantenimiento*\n\n` +
@@ -405,7 +342,6 @@ async function startBot() {
           continue;
         }
 
-        // ─── IA por mención o respuesta al bot en grupos ─────────────────────
         if (isGroup && body && !body.startsWith(CONFIG.prefix)) {
           const menciones        = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
           const contextInfo      = msg.message?.extendedTextMessage?.contextInfo;
@@ -435,7 +371,6 @@ async function startBot() {
             activarIA = esMencionado || esRespuesta;
 
           } catch (e) {
-            // Si groupMetadata falla, intentar con lo que tenemos
             const esMencionado = menciones.some(m => m.includes(botNum));
             const esRespuesta  = participantQuoted.includes(botNum);
             activarIA = esMencionado || esRespuesta;
@@ -451,7 +386,6 @@ async function startBot() {
           }
         }
 
-        // ─── Comandos con prefix ──────────────────────────────────────────────
         const [rawCmd, ...args] = body.slice(CONFIG.prefix.length).trim().split(/\s+/);
         if (!rawCmd) continue;
 
@@ -461,7 +395,6 @@ async function startBot() {
         try {
           if (!SELF_REACT_CMDS.has(cmd)) await react(sock, msg, "⏳");
 
-          // Guardar nombre en base de datos de economía
           try {
             const _ecoDb     = loadDB();
             const _rawSender = msg?.key?.participant || msg?.key?.remoteJid || sender || "";
@@ -481,7 +414,6 @@ async function startBot() {
 
         } catch (e) {
           console.error(`❌ Error en comando "${cmd}":`, e);
-          // Solo reaccionar y responder si el socket sigue activo
           if (sock) {
             try { await react(sock, msg, "❌"); } catch {}
             try { await reply(sock, jid, `❌ Error en el comando: ${e.message}`, msg); } catch {}
@@ -495,19 +427,15 @@ async function startBot() {
   });
 }
 
-// ─── Manejo de errores globales (evita crash total del proceso) ───────────────
 process.on("uncaughtException", (err) => {
   console.error("💥 uncaughtException:", err.message);
-  // No salir — dejar que el bot se recupere solo
 });
 
 process.on("unhandledRejection", (reason) => {
   console.error("💥 unhandledRejection:", reason?.message ?? reason);
-  // No salir — Baileys lanza muchas promesas rechazadas en reconexión
 });
 
 process.on("SIGINT",  () => { console.log("\n👋 Cerrando bot..."); destroySock(); process.exit(0); });
 process.on("SIGTERM", () => { console.log("\n👋 SIGTERM recibido."); destroySock(); process.exit(0); });
 
-// ─── Arranque ─────────────────────────────────────────────────────────────────
- export default startBot;
+export default startBot;
