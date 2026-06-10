@@ -1,6 +1,7 @@
 import { areJidsSameUser } from "@whiskeysockets/baileys";
 
 export const OWNER_JID = "573223090406@s.whatsapp.net";
+export const OWNER_LID = "204148502954022@lid";
 
 export function normalizeJid(jid) {
   if (!jid) return "";
@@ -18,11 +19,11 @@ export function getSender(msg) {
 }
 
 export function isOwner(userJid) {
-  try {
-    return areJidsSameUser(userJid, OWNER_JID);
-  } catch {
-    return normalizeJid(userJid).split("@")[0] === OWNER_JID.split("@")[0];
-  }
+  if (!userJid) return false;
+  try { if (areJidsSameUser(userJid, OWNER_JID)) return true; } catch {}
+  try { if (areJidsSameUser(userJid, OWNER_LID)) return true; } catch {}
+  const num = normalizeJid(userJid).split("@")[0];
+  return num === OWNER_JID.split("@")[0] || num === OWNER_LID.split("@")[0];
 }
 
 export async function isGroupAdmin(sock, jid, userJid) {
@@ -31,21 +32,11 @@ export async function isGroupAdmin(sock, jid, userJid) {
 
     const participant = metadata.participants.find((p) => {
       if (!p?.id) return false;
-
-      try {
-        if (areJidsSameUser(p.id, userJid)) return true;
-      } catch {}
-
-      if (p.phoneNumber && p.phoneNumber === OWNER_JID.split("@")[0] && isOwner(userJid)) {
-        return true;
-      }
-
+      try { if (areJidsSameUser(p.id, userJid)) return true; } catch {}
+      if (p.phoneNumber && p.phoneNumber === OWNER_JID.split("@")[0] && isOwner(userJid)) return true;
       if (p.lid) {
-        try {
-          if (areJidsSameUser(p.lid, userJid)) return true;
-        } catch {}
+        try { if (areJidsSameUser(p.lid, userJid)) return true; } catch {}
       }
-
       return normalizeJid(p.id).split("@")[0] === normalizeJid(userJid).split("@")[0];
     });
 
@@ -61,27 +52,12 @@ export async function isBotAdmin(sock, jid) {
     const botId = sock.user?.id || "";
     const botNum = botId.split("@")[0].split(":")[0];
 
-    console.log("=== DEBUG BOT ADMIN ===");
-    console.log("BOT ID:", botId);
-    console.log(
-      "PARTICIPANTS:",
-      metadata.participants.map((p) => ({
-        id: p.id,
-        lid: p.lid || null,
-        phoneNumber: p.phoneNumber || null,
-        admin: p.admin,
-      }))
-    );
-
     const participant = metadata.participants.find((p) => {
       const pid = (p.id || "").split("@")[0].split(":")[0];
       const plid = (p.lid || "").split("@")[0].split(":")[0];
       const ppn = (p.phoneNumber || "").replace(/\D/g, "");
-
       return pid === botNum || plid === botNum || ppn === botNum;
     });
-
-    console.log("BOT MATCH:", participant);
 
     return participant?.admin === "admin" || participant?.admin === "superadmin";
   } catch (e) {
@@ -89,6 +65,7 @@ export async function isBotAdmin(sock, jid) {
     return false;
   }
 }
+
 export async function requireGroup(sock, msg, jid, reply) {
   if (!jid.endsWith("@g.us")) {
     await reply(sock, jid, "❌ Este comando solo funciona en grupos.", msg);
@@ -99,7 +76,6 @@ export async function requireGroup(sock, msg, jid, reply) {
 
 export async function requireGroupAdmin(sock, msg, jid, sender, reply) {
   if (!(await requireGroup(sock, msg, jid, reply))) return false;
-
   const ok = await isGroupAdmin(sock, jid, sender);
   if (!ok) {
     await reply(sock, jid, "❌ Solo los administradores pueden usar este comando.", msg);
