@@ -57,16 +57,16 @@ function crearLoggerSilencioso() {
   logger.child = () => logger;
   return logger;
 }
-
-// ─── Configuración de la conexión ─────────────────────────────────────────────
-const sock = makeWASocket({
-  // Pasamos la función monda para callar la consola de raíz
-  logger: crearLoggerSilencioso(), 
-  auth: state, // Mantén tu variable 'state' tal como la tenías
-  
-  // Si tienes más opciones debajo de estas líneas (como version o browser),
-  // déjalas exactamente igual aquí abajo.
-});
+function crearLoggerSilencioso() {
+  const noop = () => {};
+  const logger = {
+    level: "silent",
+    trace: noop, debug: noop, info: noop,
+    warn:  noop, error: noop, fatal: noop,
+  };
+  logger.child = () => logger;
+  return logger;
+}
 
 
 // ─── Estado global ────────────────────────────────────────────────────────────
