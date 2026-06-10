@@ -4,7 +4,7 @@ import {
   DisconnectReason,
   fetchLatestBaileysVersion,
   Browsers,
-} from "@whiskeysockets/baileys";
+} from "fsociety-Baileys";
 import pino from "pino";
 import fs from "fs-extra";
 import readline from "readline";
