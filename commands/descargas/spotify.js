@@ -8,22 +8,30 @@ import { reply } from "../../utils.js";
 const RAPIDAPI_KEY  = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = "spotify-downloader9.p.rapidapi.com";
 const RAPIDAPI_URL  = "https://spotify-downloader9.p.rapidapi.com/downloadSong";
+const SEARCH_URL    = `${process.env.DV_API_URL}/search/spotify`;
 
-function extractSpotifyUrl(text) {
-  const match = String(text || "").match(
-    /https?:\/\/(?:open\.)?spotify\.com\/(?:intl-[a-z]+\/)?track\/[a-zA-Z0-9]+[^\s]*/i
-  );
-  if (!match) return null;
-  try {
-    const url = new URL(match[0].trim());
-    url.search = "";
-    return url.toString();
-  } catch {
-    return match[0].trim();
-  }
+const SPOTIFY_REGEX = /https?:\/\/(?:open\.)?spotify\.com\/(?:intl-[a-z]+\/)?track\/([a-zA-Z0-9]+)/i;
+
+function isSpotifyUrl(text) {
+  return SPOTIFY_REGEX.test(text);
 }
 
-async function fetchFromApi(spotifyUrl, retries = 2, delay = 4000) {
+// ── Buscar canción en delirius ─────────────────────────────────────────────
+async function searchTrack(query) {
+  const { data } = await axios.get(SEARCH_URL, {
+    params: { q: query, limit: 5 },
+    timeout: 15000,
+  });
+
+  if (!data?.status || !data?.data?.length)
+    throw new Error("No encontré resultados para esa búsqueda.");
+
+  // Devolver el primer resultado (más relevante)
+  return data.data[0];
+}
+
+// ── Descargar por URL de Spotify (RapidAPI) ────────────────────────────────
+async function downloadTrack(spotifyUrl, retries = 2, delay = 5000) {
   let lastError;
   for (let i = 0; i <= retries; i++) {
     try {
@@ -47,8 +55,13 @@ async function fetchFromApi(spotifyUrl, retries = 2, delay = 4000) {
         };
       }
 
-      lastError = new Error(data?.message || "La API no devolvió link de descarga.");
-      break;
+      // Si está en background (timeout: true), reintentar
+      if (data?.timeout) {
+        lastError = new Error("La canción se está procesando, intenta en 1 minuto.");
+      } else {
+        lastError = new Error(data?.message || "No se pudo obtener el link de descarga.");
+        break;
+      }
 
     } catch (e) {
       lastError = e;
@@ -66,7 +79,7 @@ async function fetchFromApi(spotifyUrl, retries = 2, delay = 4000) {
 
 export default {
   name: "spotify",
-  aliases: ["spty", "spoti", "cancion"],
+  aliases: ["spty", "spoti", "cancion", "song"],
   run: async (sock, msg, args, jid) => {
     const react = async (emoji) => {
       try {
@@ -76,33 +89,49 @@ export default {
       } catch {}
     };
 
-    const spotifyUrl = extractSpotifyUrl(args.join(" "));
+    const input = args.join(" ").trim();
 
-    if (!spotifyUrl) {
+    if (!input) {
       await react("❌");
       return reply(
         sock, jid,
-        "❌ Envía un link válido de Spotify.\nEj: `.spotify https://open.spotify.com/track/ABC123`",
+        "❌ *Uso:*\n" +
+        "• Por nombre: `.spotify milo j no hago trap`\n" +
+        "• Por link: `.spotify https://open.spotify.com/track/ABC123`",
         msg
       );
     }
 
     await react("⏳");
-    await reply(sock, jid, "🎵 *Descargando Spotify...*", msg);
     await fs.ensureDir(TEMP_DIR);
-
     const output = path.join(TEMP_DIR, `spotify_${Date.now()}.mp3`);
 
     try {
-      // ── Consultar API ───────────────────────────────────────────────────
-      const { downloadLink, title, artist, album, cover } = await fetchFromApi(spotifyUrl);
+      let spotifyUrl = null;
+      let trackInfo  = null;
 
-      console.log(`[SPOTIFY] Descargando: ${artist} - ${title}`);
+      // ── Modo 1: link directo ──────────────────────────────────────────
+      if (isSpotifyUrl(input)) {
+        await reply(sock, jid, "🎵 *Descargando Spotify...*", msg);
+        spotifyUrl = input.match(SPOTIFY_REGEX)[0];
 
-      // ── Portada con info ────────────────────────────────────────────────
-      if (cover) {
+      // ── Modo 2: búsqueda por nombre ───────────────────────────────────
+      } else {
+        await reply(sock, jid, `🔍 *Buscando:* ${input}...`, msg);
+        trackInfo = await searchTrack(input);
+        spotifyUrl = trackInfo.url;
+
+        console.log(`[SPOTIFY] Encontrado: ${trackInfo.artist} - ${trackInfo.title} → ${spotifyUrl}`);
+      }
+
+      // ── Descargar ─────────────────────────────────────────────────────
+      const { downloadLink, title, artist, album, cover } = await downloadTrack(spotifyUrl);
+
+      // ── Portada con info ──────────────────────────────────────────────
+      const coverUrl = cover || trackInfo?.image || null;
+      if (coverUrl) {
         await sock.sendMessage(jid, {
-          image: { url: cover },
+          image: { url: coverUrl },
           caption:
             `🎵 *${title}*\n` +
             `👤 ${artist}\n` +
@@ -111,7 +140,7 @@ export default {
         }, { quoted: msg });
       }
 
-      // ── Descargar MP3 ───────────────────────────────────────────────────
+      // ── Descargar MP3 ─────────────────────────────────────────────────
       const response = await axios.get(downloadLink, {
         responseType: "stream",
         timeout: 120000,
@@ -126,7 +155,7 @@ export default {
 
       const sizeMB = (stats.size / (1024 * 1024)).toFixed(1);
 
-      // ── Enviar audio ────────────────────────────────────────────────────
+      // ── Enviar audio ──────────────────────────────────────────────────
       await sock.sendMessage(jid, {
         audio: { url: output },
         mimetype: "audio/mpeg",
@@ -134,7 +163,7 @@ export default {
       }, { quoted: msg });
 
       await react("✅");
-      await reply(sock, jid, `✅ *${title}* — ${artist}\n📦 ${sizeMB}MB`, msg);
+      await reply(sock, jid, `✅ *${title}*\n👤 ${artist}\n📦 ${sizeMB}MB`, msg);
 
     } catch (e) {
       console.error("[SPOTIFY ERROR]", e.response?.data || e.message);
@@ -146,8 +175,8 @@ export default {
         msgErr = "⏳ Límite de la API alcanzado, intenta en unos minutos.";
       else if (status === 403)
         msgErr = "❌ API key inválida o sin suscripción activa.";
-      else if (status >= 500)
-        msgErr = "⏳ El servidor de descarga falló, intenta de nuevo.";
+      else if (e.message.includes("procesando"))
+        msgErr = "⏳ La canción se está procesando, espera 1 minuto e intenta de nuevo.";
 
       await react("❌");
       await reply(sock, jid, msgErr, msg);
