@@ -1,16 +1,6 @@
-// Script de migración one-shot
-// Ejecutar UNA VEZ: node migrar_json.js
-// Fusiona entradas LID duplicadas con el número real en economia.json
+import { reply } from "../../utils.js";
+import { loadDB, saveDB } from "./db.js";
 
-import fs from "fs";
-import path from "path";
-
-const DB_PATH = path.resolve("./data/economia.json");
-const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
-
-// IDs que son claramente LIDs (>12 dígitos) y no números de teléfono reales
-// Los números de teléfono reales tienen máx 15 dígitos pero típicamente 10-13
-// Los LIDs de WhatsApp tienen 15 dígitos y son muy distintos a los teléfonos
 function esLid(id) {
   return /^\d{13,}$/.test(id);
 }
@@ -61,45 +51,66 @@ function mergeUsers(dest, src) {
   }
 }
 
-// Mapeo manual conocido de LID → número real (del JSON actual)
-// nombre igual = misma persona
-const lidKeys = Object.keys(db.usuarios).filter(esLid);
-const realKeys = Object.keys(db.usuarios).filter(k => !esLid(k));
+export default {
+  name: "migrardb",
 
-console.log(`LIDs encontrados: ${lidKeys.join(", ")}`);
-console.log(`Usuarios reales: ${realKeys.length}`);
+  async run(sock, msg, args, jid, isOwner) {
+    if (!isOwner) return reply(sock, jid, "❌ Solo el dueño puede usar este comando.", msg);
 
-let fusionados = 0;
-let eliminados = 0;
+    const db = loadDB();
+    const lidKeys  = Object.keys(db.usuarios).filter(esLid);
+    const realKeys = Object.keys(db.usuarios).filter(k => !esLid(k));
 
-for (const lid of lidKeys) {
-  const lidUser = db.usuarios[lid];
-  
-  // Buscar por nombre igual entre usuarios reales
-  const match = realKeys.find(rk => {
-    const ru = db.usuarios[rk];
-    return ru.nombre && lidUser.nombre && ru.nombre === lidUser.nombre;
-  });
-
-  if (match) {
-    console.log(`✅ Fusionando LID ${lid} (${lidUser.nombre}) → ${match}`);
-    mergeUsers(db.usuarios[match], lidUser);
-    delete db.usuarios[lid];
-    fusionados++;
-  } else {
-    // LID sin match por nombre — verificar si tiene datos útiles
-    const tieneData = (lidUser.saldo || 0) > 0 || (lidUser.banco || 0) > 0 ||
-      (lidUser.mascotas?.length || 0) > 0 || (lidUser.negocios?.length || 0) > 0;
-    
-    if (!tieneData) {
-      console.log(`🗑️  Eliminando LID vacío ${lid} (${lidUser.nombre || "sin nombre"})`);
-      delete db.usuarios[lid];
-      eliminados++;
-    } else {
-      console.log(`⚠️  LID ${lid} (${lidUser.nombre}) tiene datos pero sin match — manteniendo`);
+    if (lidKeys.length === 0) {
+      return reply(sock, jid, "✅ No hay entradas LID que migrar.", msg);
     }
-  }
-}
 
-fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
-console.log(`\n✅ Migración completa: ${fusionados} fusionados, ${eliminados} eliminados.`);
+    let fusionados = 0;
+    let eliminados = 0;
+    const sinMatch = [];
+    const log = [];
+
+    for (const lid of lidKeys) {
+      const lidUser = db.usuarios[lid];
+
+      const match = realKeys.find(rk => {
+        const ru = db.usuarios[rk];
+        return ru.nombre && lidUser.nombre && ru.nombre === lidUser.nombre;
+      });
+
+      if (match) {
+        mergeUsers(db.usuarios[match], lidUser);
+        delete db.usuarios[lid];
+        fusionados++;
+        log.push(`✅ ${lidUser.nombre || lid} fusionado`);
+      } else {
+        const tieneData =
+          (lidUser.saldo || 0) > 0 || (lidUser.banco || 0) > 0 ||
+          (lidUser.mascotas?.length || 0) > 0 || (lidUser.negocios?.length || 0) > 0;
+
+        if (!tieneData) {
+          delete db.usuarios[lid];
+          eliminados++;
+          log.push(`🗑️ ${lidUser.nombre || lid} eliminado (vacío)`);
+        } else {
+          sinMatch.push(`⚠️ ${lid} (${lidUser.nombre || "sin nombre"}) tiene datos pero sin match`);
+        }
+      }
+    }
+
+    saveDB(db);
+
+    const lines = [
+      "🔄 *Migración completada*",
+      "",
+      ...log,
+      ...(sinMatch.length ? ["", ...sinMatch] : []),
+      "",
+      `✅ Fusionados: *${fusionados}*`,
+      `🗑️ Eliminados: *${eliminados}*`,
+      ...(sinMatch.length ? [`⚠️ Sin match: *${sinMatch.length}*`] : []),
+    ];
+
+    return reply(sock, jid, lines.join("\n"), msg);
+  }
+};
