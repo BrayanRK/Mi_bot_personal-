@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@whiskeysockets/baileys": "latest",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "archiver": "^7.0.1",
     "axios": "^1.15.2",
     "boxen": "^8.0.1",
