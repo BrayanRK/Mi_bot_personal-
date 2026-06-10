@@ -300,7 +300,23 @@ async function startBot() {
           }
         }
 
-        const sender  = getSender(msg);
+        let sender = getSender(msg);
+
+// Resolver @lid a número real
+if (sender?.endsWith("@lid")) {
+  const isGrp = (msg.key.remoteJid || "").endsWith("@g.us");
+  if (isGrp) {
+    try {
+      const meta = await sock.groupMetadata(msg.key.remoteJid);
+      const found = meta.participants.find(p => p.id === sender);
+      if (found?.phoneNumber) {
+        sender = `${found.phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
+      } else if (found?.id && !found.id.endsWith("@lid")) {
+        sender = found.id;
+      }
+    } catch {}
+  }
+}
         const isOwner = checkIsOwner(sender);
 
         const tempBody =
@@ -396,17 +412,37 @@ async function startBot() {
           if (!SELF_REACT_CMDS.has(cmd)) await react(sock, msg, "⏳");
 
           try {
-            const _ecoDb     = loadDB();
-            const _rawSender = msg?.key?.participant || msg?.key?.remoteJid || sender || "";
-            const _ecoId     = _rawSender.endsWith("@lid")
-              ? (msg?.key?.senderPn
-                  ? msg.key.senderPn.replace(/\D/g, "")
-                  : numId(sender))
-              : numId(_rawSender);
-            getUser(_ecoDb, _ecoId);
-            saveNombre(_ecoDb, _ecoId, msg?.pushName);
-            saveDB(_ecoDb);
-          } catch {}
+  const _ecoDb = loadDB();
+
+  // Obtener el JID crudo del participante
+  const _rawSender = msg?.key?.participant || msg?.key?.remoteJid || sender || "";
+
+  let _ecoId;
+
+  if (_rawSender.endsWith("@lid")) {
+    // Intentar resolver el @lid contra los metadatos del grupo
+    const isGrp = jid.endsWith("@g.us");
+    if (isGrp) {
+      try {
+        const meta = await sock.groupMetadata(jid);
+        const found = meta.participants.find(p => p.id === _rawSender);
+        if (found?.phoneNumber) {
+          _ecoId = found.phoneNumber.replace(/\D/g, "");
+        } else if (found?.id && !found.id.endsWith("@lid")) {
+          _ecoId = numId(found.id);
+        }
+      } catch {}
+    }
+    // Si no se resolvió, usar el sender normal
+    if (!_ecoId) _ecoId = numId(sender);
+  } else {
+    _ecoId = numId(_rawSender);
+  }
+
+  getUser(_ecoDb, _ecoId);
+  saveNombre(_ecoDb, _ecoId, msg?.pushName);
+  saveDB(_ecoDb);
+} catch {}
 
           await commands[cmd](sock, msg, args, jid, isOwner, isGroup, sender);
 
