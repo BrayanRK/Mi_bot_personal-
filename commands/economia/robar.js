@@ -12,12 +12,32 @@ export default {
   async run(sock, msg, args, chatId, isOwner, isGroup, sender) {
     const send = (text) => sock.sendMessage(chatId, { text }, { quoted: msg });
 
-    const mentionedJid = msg?.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-    if (!mentionedJid) return send("❌ Menciona a quien quieres robar.\n\nEjemplo: `.robar @usuario`");
+    const mentionedRaw = msg?.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    if (!mentionedRaw) return send("❌ Menciona a quien quieres robar.\n\nEjemplo: `.robar @usuario`");
 
     const db     = loadDB();
-    const fromId = numId(sender || msg?.key?.participant || msg?.key?.remoteJid);
-    const toId   = await resolverId(mentionedJid, sock, chatId);
+    const fromId = numId(sender);
+
+    // Resolver @lid de la mención al número real
+    let toId;
+    if (mentionedRaw.endsWith("@lid")) {
+      const ctxParticipant = msg?.message?.extendedTextMessage?.contextInfo?.participant;
+      if (ctxParticipant && !ctxParticipant.endsWith("@lid")) {
+        toId = numId(ctxParticipant);
+      } else {
+        try {
+          const meta = await sock.groupMetadata(chatId);
+          const found = meta.participants.find(p => p.id === mentionedRaw || p.lid === mentionedRaw);
+          if (found?.jid && !found.jid.endsWith("@lid"))   toId = numId(found.jid);
+          else if (found?.phoneNumber)                      toId = found.phoneNumber.replace(/\D/g, "");
+          else                                              toId = await resolverId(mentionedRaw, sock, chatId);
+        } catch {
+          toId = await resolverId(mentionedRaw, sock, chatId);
+        }
+      }
+    } else {
+      toId = numId(mentionedRaw);
+    }
 
     if (fromId === toId) return send("❌ No puedes robarte a ti mismo.");
 
@@ -57,10 +77,9 @@ export default {
       víctima.saldo -= robado;
       ladrón.saldo  += robado;
 
-      // Estadísticas
-ladrón.estadisticas ??= {};
-ladrón.estadisticas.robos ??= 0;
-ladrón.estadisticas.robos++;
+      ladrón.estadisticas ??= {};
+      ladrón.estadisticas.robos ??= 0;
+      ladrón.estadisticas.robos++;
 
       saveDB(db);
       await send([

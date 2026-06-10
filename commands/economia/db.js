@@ -66,7 +66,6 @@ export function getUser(db, id) {
       cantidad:   m.cantidad ?? 1,
       compradoEn: m.compradoEn ?? Date.now()
     }));
-    // Consolidar duplicados del mismo tipo en una sola entrada
     const map = new Map();
     for (const m of user.mascotas) {
       if (map.has(m.tipo)) map.get(m.tipo).cantidad += m.cantidad;
@@ -117,12 +116,13 @@ export async function resolverId(jid = "", sock = null, chatId = null) {
       const meta = await sock.groupMetadata(chatId);
       const raw  = numId(jid);
       const p    = meta.participants.find(p =>
-        p.id === jid || numId(p.id) === raw ||
+        p.id === jid || p.lid === jid || numId(p.id) === raw ||
         (p.phoneNumber && p.phoneNumber.replace(/\D/g, "") === raw)
       );
       if (p) {
-        if (p.phoneNumber) return p.phoneNumber.replace(/\D/g, "");
-        if (p.id && !p.id.endsWith("@lid")) return numId(p.id);
+        if (p.jid && !p.jid.endsWith("@lid"))      return numId(p.jid);
+        if (p.phoneNumber)                          return p.phoneNumber.replace(/\D/g, "");
+        if (p.id && !p.id.endsWith("@lid"))         return numId(p.id);
       }
     } catch {}
   }
@@ -133,7 +133,6 @@ export async function resolverId(jid = "", sock = null, chatId = null) {
 //  TIENDA
 // ══════════════════════════════════════════
 export const TIENDA = [
-  // Items de inventario
   { id: "escudo",         nombre: "🛡️ Escudo Anti-Robo",      precio: 1000000,     desc: "Protege tu saldo de robos por 24h" },
   { id: "vip",            nombre: "⭐ Membresía VIP",            precio: 20000,    desc: "Daily doble por 7 días" },
   { id: "pico",           nombre: "⛏️ Pico de Trabajo",          precio: 8000,     desc: "Duplica ganancias del .trabajo por 3 usos" },
@@ -141,28 +140,23 @@ export const TIENDA = [
   { id: "amuleto",        nombre: "🧿 Amuleto de la Suerte",     precio: 30000,    desc: "+30% ganancias en pesca y minería por 5 usos" },
   { id: "seguro",         nombre: "📋 Seguro Bancario",          precio: 50000,    desc: "Protege tu banco de eventos negativos por 48h" },
   { id: "elixir",         nombre: "🧪 Elixir de Trabajo",        precio: 25000,    desc: "Triplica ganancias del .trabajo por 1 uso" },
-
-  // Mascotas — acumulables, se suman
   { id: "perro",          nombre: "🐕 Perro",                    precio: 50000,    desc: "Genera $5,000/hr — acumulable" },
   { id: "gato",           nombre: "🐈 Gato",                     precio: 100000,   desc: "Genera $10,000/hr — acumulable" },
   { id: "zorro",          nombre: "🦊 Zorro",                    precio: 250000,   desc: "Genera $25,000/hr — acumulable" },
   { id: "dragon",         nombre: "🐉 Dragón",                   precio: 1000000,  desc: "Genera $100,000/hr — acumulable" },
   { id: "fenix",          nombre: "🔥 Fénix",                    precio: 5000000,  desc: "Genera $500,000/hr — mascota legendaria" },
   { id: "unicornio",      nombre: "🦄 Unicornio",                precio: 2000000,  desc: "Genera $200,000/hr — mascota mágica" },
-
-  // Negocios — acumulables, se suman
   { id: "puesto",         nombre: "🥤 Puesto de Limonada",       precio: 100000,   desc: "Genera $10,000/hr — acumulable" },
   { id: "tienda",         nombre: "🏪 Tienda",                   precio: 500000,   desc: "Genera $50,000/hr — acumulable" },
   { id: "empresa",        nombre: "🏢 Empresa",                  precio: 5000000,  desc: "Genera $250,000/hr — acumulable" },
   { id: "fabrica",        nombre: "🏭 Fábrica",                  precio: 10000000, desc: "Genera $600,000/hr — acumulable" },
   { id: "banco_neg",      nombre: "🏦 Banco Privado",            precio: 50000000, desc: "Genera $3,000,000/hr — negocio élite" },
   { id: "casino",         nombre: "🎰 Casino",                   precio: 20000000, desc: "Genera $1,500,000/hr — acumulable" },
-
-  // Cajas
   { id: "cajacomun",      nombre: "📦 Caja Común",               precio: 12000,    desc: "Premios aleatorios" },
   { id: "cajarara",       nombre: "🎁 Caja Rara",                precio: 75000,    desc: "Mejores premios" },
   { id: "cajalegendaria", nombre: "💎 Caja Legendaria",          precio: 250000,   desc: "Premios épicos" },
-  { id: "cajamistica",    nombre: "🌌 Caja Mística",             precio: 2000000,  desc: "Premios exclusivos — alto riesgo, alta recompensa" },];
+  { id: "cajamistica",    nombre: "🌌 Caja Mística",             precio: 2000000,  desc: "Premios exclusivos — alto riesgo, alta recompensa" },
+];
 
 export const MASCOTAS_IDS = ["perro", "gato", "zorro", "dragon", "fenix", "unicornio"];
 export const NEGOCIOS_IDS = ["puesto", "tienda", "empresa", "fabrica", "banco_neg", "casino"];
