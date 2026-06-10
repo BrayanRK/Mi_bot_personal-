@@ -309,12 +309,20 @@ if (sender?.endsWith("@lid")) {
     try {
       const meta = await sock.groupMetadata(msg.key.remoteJid);
       const found = meta.participants.find(p => p.id === sender);
+
+      // LOG TEMPORAL - borrar después
+      console.log("[LID DEBUG] sender lid:", sender);
+      console.log("[LID DEBUG] msg.key:", JSON.stringify(msg.key, null, 2));
+      console.log("[LID DEBUG] participante encontrado:", JSON.stringify(found, null, 2));
+
       if (found?.phoneNumber) {
         sender = `${found.phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
       } else if (found?.id && !found.id.endsWith("@lid")) {
         sender = found.id;
       }
-    } catch {}
+    } catch(e) {
+      console.log("[LID DEBUG] error groupMetadata:", e.message);
+    }
   }
 }
         const isOwner = checkIsOwner(sender);
