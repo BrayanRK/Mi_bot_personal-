@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@whiskeysockets/baileys": "^6.7.5",
+    "@whiskeysockets/baileys": "6.7.22",
     "archiver": "^7.0.1",
     "axios": "^1.15.2",
     "boxen": "^8.0.1",
@@ -21,7 +21,7 @@
     "fs-extra": "^11.3.5",
     "gradient-string": "^3.0.0",
     "groq-sdk": "^1.1.2",
-    "jimp": "^1.6.1",
+    "jimp": "0.16.13",
     "link-preview-js": "^3.2.0",
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
@@ -32,5 +32,8 @@
   },
   "devDependencies": {
     "@gradio/client": "^2.2.1"
+  },
+  "overrides": {
+    "jimp": "0.16.13"
   }
 }
