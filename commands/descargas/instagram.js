@@ -23,40 +23,54 @@ function extractIgUrl(text) {
   }
 }
 
-async function fetchFromApi(igUrl) {
-  const { data } = await axios.get(RAPIDAPI_URL, {
-    params: { url: igUrl },
-    headers: {
-      "x-rapidapi-key":  RAPIDAPI_KEY,
-      "x-rapidapi-host": RAPIDAPI_HOST,
-      "Content-Type":    "application/json",
-    },
-    timeout: 30000,
-  });
+async function fetchFromApi(igUrl, retries = 2, delay = 4000) {
+  let lastError;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const { data } = await axios.get(RAPIDAPI_URL, {
+        params: { url: igUrl },
+        headers: {
+          "x-rapidapi-key":  RAPIDAPI_KEY,
+          "x-rapidapi-host": RAPIDAPI_HOST,
+          "Content-Type":    "application/json",
+        },
+        timeout: 30000,
+      });
 
-  if (!data?.success) throw new Error(data?.message || "La API no respondió correctamente.");
+      if (data?.success) {
+        // Parsear respuesta exitosa
+        const videos = data.data?.medias?.filter(m => m.type === "video");
+        const videoUrl = videos?.[0]?.url;
+        if (!videoUrl) throw new Error("No encontré el link del video en la respuesta.");
 
-  // Buscar el primer media de tipo video (no audio)
-  const videoMedia = data.data?.medias?.find(
-    m => m.type === "video" && !m.is_audio === false || m.type === "video"
-  );
+        return {
+          videoUrl,
+          thumbnail: data.data?.thumbnail  || null,
+          title:     data.data?.title       || "",
+          author:    data.data?.author      || "",
+          duration:  data.data?.duration    || null,
+          likes:     data.data?.like_count  || 0,
+          views:     data.data?.view_count  || 0,
+          username:  data.data?.owner?.username || "",
+        };
+      }
 
-  // Filtrar solo videos reales (no solo audio)
-  const videos = data.data?.medias?.filter(m => m.type === "video");
-  const videoUrl = videos?.[0]?.url;
+      // success: false — solo reintentar si es error 500
+      lastError = new Error(data?.message || "La API no respondió correctamente.");
+      if (data?.code !== 500) break;
 
-  if (!videoUrl) throw new Error("No encontré el link del video en la respuesta.");
+    } catch (e) {
+      lastError = e;
+      const status = e.response?.status;
+      if (status && ![500, 502, 503].includes(status)) break;
+    }
 
-  return {
-    videoUrl,
-    thumbnail:  data.data?.thumbnail  || null,
-    title:      data.data?.title       || "",
-    author:     data.data?.author      || "",
-    duration:   data.data?.duration    || null,
-    likes:      data.data?.like_count  || 0,
-    views:      data.data?.view_count  || 0,
-    username:   data.data?.owner?.username || "",
-  };
+    if (i < retries) {
+      console.log(`[IG] Reintento ${i + 1}/${retries} en ${delay / 1000}s...`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
 }
 
 export default {
@@ -89,7 +103,7 @@ export default {
     const output = path.join(TEMP_DIR, `ig_${Date.now()}.mp4`);
 
     try {
-      // ── Consultar API ───────────────────────────────────────────────────
+      // ── Consultar API (con reintentos en error 500) ─────────────────────
       const { videoUrl, thumbnail, title, author, duration, likes, views, username } =
         await fetchFromApi(igUrl);
 
@@ -98,8 +112,8 @@ export default {
       // ── Thumbnail con info ──────────────────────────────────────────────
       if (thumbnail) {
         const caption =
-          (title   ? `📝 ${title.slice(0, 200)}\n\n` : "") +
-          (author  ? `👤 *${author}*` + (username ? ` (@${username})` : "") + "\n" : "") +
+          (title  ? `📝 ${title.slice(0, 200)}\n\n` : "") +
+          (author ? `👤 *${author}*` + (username ? ` (@${username})` : "") + "\n" : "") +
           (duration ? `⏱️ ${Math.round(duration)}s\n` : "") +
           `❤️ ${likes.toLocaleString()} | 👁️ ${views.toLocaleString()}\n` +
           `⬇️ Descargando...`;
@@ -157,7 +171,7 @@ export default {
       else if (status === 403)
         msgErr = "❌ API key inválida o sin suscripción activa.";
       else if (status >= 500)
-        msgErr = "⏳ El servidor de descarga falló, intenta de nuevo.";
+        msgErr = "⏳ El servidor de descarga está en mantenimiento, intenta en 1 minuto.";
 
       await react("❌");
       await reply(sock, jid, msgErr, msg);
