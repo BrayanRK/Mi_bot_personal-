@@ -1,4 +1,4 @@
-import { areJidsSameUser } from "@whiskeysockets/baileys";
+import { areJidsSameUser } from "fsociety-Baileys";
 
 export const OWNER_JID = "573223090406@s.whatsapp.net";
 export const OWNER_LID = "204148502954022@lid";
