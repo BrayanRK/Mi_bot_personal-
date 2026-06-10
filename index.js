@@ -18,7 +18,6 @@ import { setupWelcomeEvent } from "./commands/eventos/Welcome.js";
 import { setupAutoPromote } from "./commands/eventos/autoPromote.js";
 import { checkAntispam } from "./commands/admin/antispam.js";
 import { sesiones } from "./sessions.js";
-import { descargarApk } from "./commands/descargas/apkdl.js";
 import "dotenv/config";
 import { iniciarCronBuenasNoches } from "./commands/ia/buenasnoches.js";
 import { setupGoodbyeEvent } from "./commands/eventos/goodbye.js";
@@ -443,27 +442,6 @@ async function startBot() {
               continue;
             }
           }
-        }
-
-        // ─── Mensajes sin prefix (sesiones activas) ───────────────────────────
-        if (!body.startsWith(CONFIG.prefix)) {
-          const bodyTrim = body.trim();
-
-          const sesionJuego = getSesionJuego(jid, sender);
-          if (sesionJuego && commands["numjuego"]) {
-            await commands["numjuego"](sock, msg, [bodyTrim], jid, isOwner, isGroup, sender);
-            continue;
-          }
-
-          if (sesiones.has(sender) && ["1", "2"].includes(bodyTrim)) {
-            console.log("[SESION] Respuesta:", bodyTrim, "de:", sender);
-            const sesion = sesiones.get(sender);
-            sesiones.delete(sender);
-            const prefer = bodyTrim === "1" ? "apk" : "xapk";
-            await descargarApk(sock, msg, jid, sesion.query, prefer);
-          }
-
-          continue;
         }
 
         // ─── Comandos con prefix ──────────────────────────────────────────────
