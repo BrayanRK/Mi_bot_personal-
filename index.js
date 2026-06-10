@@ -11,7 +11,7 @@ import readline from "readline";
 import { CONFIG, TEMP_DIR } from "./config.js";
 import loadCommands from "./commands/loader.js";
 import { reply, grupoPermitido, react } from "./utils.js";
-import { getSender } from "./commands/utilidades/permisos.js";
+import { getSender, isOwner as checkIsOwner } from "./commands/utilidades/permisos.js";
 import { checkAntiLink } from "./commands/admin/antilink.js";
 import { checkAutoForward } from "./commands/eventos/AutoForward.js";
 import { setupWelcomeEvent } from "./commands/eventos/Welcome.js";
@@ -45,11 +45,8 @@ const SELF_REACT_CMDS = new Set([
   "applemusic", "amusic", "apple", "am",
 ]);
 
-// ─── Logger silencioso ────────────────────────────────────────────────────────
-// IMPORTANTE: Baileys usa logger.child() para crear sub-loggers (Signal, session, etc.)
-// Si no se sobreescribe child(), los sub-loggers heredan el nivel real y spamean
-// "Closing session", rotaciones de clave Signal, etc.
-// Esta función crea un logger completamente mudo para todo Baileys.
+// ─── Logger silencioso definitivo ─────────────────────────────────────────────
+// Bloquea los sub-loggers internos de Baileys para que no spameen sesiones
 function crearLoggerSilencioso() {
   const noop = () => {};
   const logger = {
@@ -57,10 +54,20 @@ function crearLoggerSilencioso() {
     trace: noop, debug: noop, info: noop,
     warn:  noop, error: noop, fatal: noop,
   };
-  // child() debe devolver otro logger igualmente mudo (evita el spam de sesión Signal)
   logger.child = () => logger;
   return logger;
 }
+
+// ─── Configuración de la conexión ─────────────────────────────────────────────
+const sock = makeWASocket({
+  // Pasamos la función monda para callar la consola de raíz
+  logger: crearLoggerSilencioso(), 
+  auth: state, // Mantén tu variable 'state' tal como la tenías
+  
+  // Si tienes más opciones debajo de estas líneas (como version o browser),
+  // déjalas exactamente igual aquí abajo.
+});
+
 
 // ─── Estado global ────────────────────────────────────────────────────────────
 let sock             = null;
@@ -348,7 +355,7 @@ async function startBot() {
         }
 
         const sender  = getSender(msg);
-        const isOwner = sender === OWNER;
+        const isOwner = checkIsOwner(sender);
 
         const tempBody =
           msg.message?.conversation ||
