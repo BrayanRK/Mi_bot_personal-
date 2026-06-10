@@ -5,6 +5,14 @@ import boxen       from "boxen";
 import { CONFIG }  from "./config.js";
 import startBot    from "./index.js";   // tu lógica principal
 
+const _originalLog = console.log;
+console.log = (...args) => {
+  const msg = args[0];
+  if (typeof msg === "string" && msg.includes("Closing session")) return;
+  if (typeof msg === "object" && msg?.constructor?.name === "SessionEntry") return;
+  _originalLog(...args);
+};
+
 // ─── Paletas (solo 2 colores por par, gradient-string lo exige) ──────────────
 const rosa    = gradient(["#ff9a9e", "#fad0c4"]);
 const purpura = gradient(["#a18cd1", "#fbc2eb"]);
