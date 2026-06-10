@@ -305,23 +305,29 @@ async function startBot() {
 // Resolver @lid a número real
 if (sender?.endsWith("@lid")) {
   const isGrp = (msg.key.remoteJid || "").endsWith("@g.us");
-  if (isGrp) {
+
+  // 1. participantPn directo en msg.key (más confiable)
+  if (msg.key?.participantPn) {
+    sender = msg.key.participantPn.includes("@")
+      ? msg.key.participantPn
+      : `${msg.key.participantPn.replace(/\D/g, "")}@s.whatsapp.net`;
+  } else if (isGrp) {
     try {
       const meta = await sock.groupMetadata(msg.key.remoteJid);
       const found = meta.participants.find(p => p.id === sender);
 
-      // LOG TEMPORAL - borrar después
-      console.log("[LID DEBUG] sender lid:", sender);
-      console.log("[LID DEBUG] msg.key:", JSON.stringify(msg.key, null, 2));
-      console.log("[LID DEBUG] participante encontrado:", JSON.stringify(found, null, 2));
-
-      if (found?.phoneNumber) {
+      if (found?.jid) {
+        // 2. campo jid del participante
+        sender = found.jid.includes("@") ? found.jid : `${found.jid}@s.whatsapp.net`;
+      } else if (found?.phoneNumber) {
+        // 3. phoneNumber
         sender = `${found.phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
       } else if (found?.id && !found.id.endsWith("@lid")) {
+        // 4. id normal
         sender = found.id;
       }
     } catch(e) {
-      console.log("[LID DEBUG] error groupMetadata:", e.message);
+      console.log("[LID] error groupMetadata:", e.message);
     }
   }
 }
