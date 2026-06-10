@@ -5,6 +5,8 @@ export default {
   name: "migrar",
 
   async run(sock, msg, args, jid, isOwner) {
+      console.log("ISOWNER EN MIGRAR:", isOwner);
+      console.log("SENDER:", msg?.key?.participant || msg?.key?.remoteJid);
     if (!isOwner) {
       return reply(sock, jid, "❌ Solo el dueño puede usar este comando.", msg);
     }
