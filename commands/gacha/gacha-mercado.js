@@ -1,9 +1,9 @@
 import fs from "fs";
 import path from "path";
-import { normalizeJid } from "../utilidades/permisos.js";
+import { normalizeJid } from "../../utilidades/permisos.js";
 
 const inventariosPath = path.join(process.cwd(), "data", "inventarios.json");
-const mercadoPath = path.join(process.cwd(), "src", "datos", "mercado.json");
+const mercadoPath = path.join(process.cwd(), "data", "mercado.json");
 
 function leerJSON(ruta, defecto = {}) {
   if (!fs.existsSync(ruta)) return defecto;
@@ -16,118 +16,113 @@ function guardarJSON(ruta, datos) {
 
 export default {
   name: "mercado",
-  aliases: ["market", "tienda", "vender"],
+  aliases: ["market", "ventas", "gachashop"],
   run: async (sock, msg, args, jid, isOwner, isGroup, sender) => {
     try {
       const senderReal = msg?.key?.participant || msg?.key?.remoteJid || sender || "";
       const usuarioId = normalizeJid(senderReal).split("@")[0];
 
-      const accion = args[0]?.toLowerCase();
-
-      if (!accion || !["ver", "vender", "comprar"].includes(accion)) {
-        return sock.sendMessage(jid, {
-          text: "╭━━━〔 🏪 𝑴𝑰𝑻𝑺𝑼𝑴𝑰 𝑴𝑬𝑹𝑪𝑨𝑫𝑶 〕━━━⬣\n┃ Uso del comando:\n┃ 🔹 *.mercado ver* → Lista las cartas en venta.\n┃ 🔹 *.mercado vender [Nombre]* → Publica una carta.\n┃ 🔹 *.mercado comprar [ID]* → Compra una carta por ID.\n╰━━━━━━━━━━━━━━━━━━━━⬣"
-        });
-      }
-
-      const mercado = leerJSON(mercadoPath, []);
+      const mercadoGlobal = leerJSON(mercadoPath, []);
       const inventariosGlobales = leerJSON(inventariosPath, {});
 
-      if (accion === "ver") {
-        if (!mercado.length) {
-          return sock.sendMessage(jid, { text: "🏪 El mercado global está vacío en este momento." });
+      if (!args[0]) {
+        if (!mercadoGlobal.length) {
+          return sock.sendMessage(jid, { 
+            text: "╭━━━〔 🏪 𝑴𝑰𝑻𝑺𝑼𝑴𝑰 𝑴𝑨𝑹𝑲𝑬𝑻 〕━━━⬣\n┃ 🛒 El mercado está vacío actualmente.\n┃ 📝 Usa *.mercado sell [Nombre]* para vender.\n╰━━━━━━━━━━━━━━━━━━━━⬣" 
+          });
         }
 
-        let texto = "╭━━━〔 🏪 𝑴𝑰𝑻𝑺𝑼𝑴𝑰 𝑴𝑬𝑹𝑪𝑨𝑫𝑶 〕━━━⬣\n";
-        texto += "┃ 🛒 Cartas disponibles para compra:\n┃ ──────────────────────\n";
-        
-        for (let item of mercado) {
-          texto += `┃ 🆔 ID: *${item.idMarket}*\n┃ 🃏 Carta: *${item.name}* (${item.rarity})\n┃ 👤 Vendedor: @${item.vendedor}\n┃ ──────────────────────\n`;
-        }
-        texto += "╰━━━━━━━━━━━━━━━━━━━━⬣";
+        let texto = "╭━━━〔 🏪 𝑴𝑰𝑻𝑺𝑼𝑴𝑰 𝑴𝑨𝑹𝑲𝑬𝑻 〕━━━⬣\n";
+        texto += "┃ 🛒 Cartas en venta disponibles:\n┃ ──────────────────────\n";
 
-        return sock.sendMessage(jid, { text: texto, mentions: [senderReal] });
+        const rarityEmojis = { "SSR": "🌟", "SR": "⭐", "R": "✨" };
+
+        mercadoGlobal.forEach((item, index) => {
+          const emoji = rarityEmojis[item.carta.rarity] || "🃏";
+          texto += `┃ *#${index + 1}* » ${emoji} *${item.carta.name}* [${item.carta.rarity}]\n`;
+          texto += `┃ 👤 Vendedor: @${item.vendedor}\n`;
+          texto += `┃ 💰 ID de compra: \`${item.idVenta}\`\n`;
+          texto += "┃ ──────────────────────\n";
+        });
+
+        texto += "┃ 🛒 Para comprar usa: *.mercado buy [ID]*\n╰━━━━━━━━━━━━━━━━━━━━⬣";
+        return sock.sendMessage(jid, { text: texto, mentions: mercadoGlobal.map(i => `${i.vendedor}@s.whatsapp.net`) });
       }
 
-      if (accion === "vender") {
-        const nombreCarta = args.slice(1).join(" ")?.trim();
-        if (!nombreCarta) {
-          return sock.sendMessage(jid, { text: "❌ Especifica el nombre de la carta que quieres vender." });
+      const accion = args[0].toLowerCase();
+
+      if (accion === "sell" || accion === "vender") {
+        const nombrePersonaje = args.slice(1).join(" ");
+        if (!nombrePersonaje) {
+          return sock.sendMessage(jid, { text: "❌ Especifica el nombre del personaje. Ejemplo: *.mercado sell Naruto*" });
         }
 
         const miInventario = inventariosGlobales[usuarioId] || [];
-        const indexCarta = miInventario.findIndex(p => p.name.toLowerCase() === nombreCarta.toLowerCase());
+        const indexCarta = miInventario.findIndex(c => c.name.toLowerCase() === nombrePersonaje.toLowerCase());
 
         if (indexCarta === -1) {
-          return sock.sendMessage(jid, { text: `❌ No tienes a *${nombreCarta}* en tu inventario.` });
+          return sock.sendMessage(jid, { text: `❌ No tienes a *${nombrePersonaje}* en tu inventario.` });
         }
 
         const [cartaParaVender] = miInventario.splice(indexCarta, 1);
-        
-        const idUnico = String(Date.now()).slice(-6);
 
-        mercado.push({
-          idMarket: idUnico,
+        const idVenta = Math.random().toString(36).substring(2, 7).toUpperCase();
+
+        mercadoGlobal.push({
+          idVenta,
           vendedor: usuarioId,
-          vendedorJid: senderReal,
-          ...cartaParaVender
+          carta: cartaParaVender
         });
 
         inventariosGlobales[usuarioId] = miInventario;
 
         guardarJSON(inventariosPath, inventariosGlobales);
-        guardarJSON(mercadoPath, mercado);
+        guardarJSON(mercadoPath, mercadoGlobal);
 
-        return sock.sendMessage(jid, {
-          text: `✅ Publicaste a *${cartaParaVender.name}* en el mercado con el ID: *${idUnico}*. Se removió de tu inventario.`
+        return sock.sendMessage(jid, { 
+          text: `✅ Puest@ en venta: *${cartaParaVender.name}* [${cartaParaVender.rarity}].\n📦 Guardado en el mercado con el ID: \`${idVenta}\`` 
         });
       }
 
-      if (accion === "comprar") {
-        const idBuscar = args[1]?.trim();
-        if (!idBuscar) {
-          return sock.sendMessage(jid, { text: "❌ Especifica el ID de la carta que quieres comprar." });
+      if (accion === "buy" || accion === "comprar") {
+        const idVentaBuscar = args[1]?.toUpperCase();
+        if (!idVentaBuscar) {
+          return sock.sendMessage(jid, { text: "❌ Especifica el ID de la venta. Ejemplo: *.mercado buy X7R2B*" });
         }
 
-        const indexMercado = mercado.findIndex(item => item.idMarket === idBuscar);
-        if (indexMercado === -1) {
-          return sock.sendMessage(jid, { text: "❌ Ese ID no existe en el mercado o ya fue comprado." });
+        const indexVenta = mercadoGlobal.findIndex(v => v.idVenta === idVentaBuscar);
+
+        if (indexVenta === -1) {
+          return sock.sendMessage(jid, { text: "❌ Ese ID de venta no existe en el mercado o ya fue comprado." });
         }
 
-        const itemMercado = mercado[indexMercado];
+        const datosVenta = mercadoGlobal[indexVenta];
 
-        if (itemMercado.vendedor === usuarioId) {
-          return sock.sendMessage(jid, { text: "❌ No puedes comprar tu propia carta en venta." });
+        if (datosVenta.vendedor === usuarioId) {
+          return sock.sendMessage(jid, { text: "❌ No puedes comprar tu propia carta en el mercado." });
         }
 
-        mercado.splice(indexMercado, 1);
+        mercadoGlobal.splice(indexVenta, 1);
 
         if (!inventariosGlobales[usuarioId]) {
           inventariosGlobales[usuarioId] = [];
         }
+        inventariosGlobales[usuarioId].push(datosVenta.carta);
 
-        inventariosGlobales[usuarioId].push({
-          name: itemMercado.name,
-          rarity: itemMercado.rarity,
-          attack: itemMercado.attack,
-          defense: itemMercado.defense,
-          health: itemMercado.health,
-          image: itemMercado.image,
-          fecha: new Date().toISOString()
-        });
-
-        guardarJSON(mercadoPath, mercado);
         guardarJSON(inventariosPath, inventariosGlobales);
+        guardarJSON(mercadoPath, mercadoGlobal);
 
-        return sock.sendMessage(jid, {
-          text: `🎉 ¡Felicidades! Compraste con éxito a *${itemMercado.name}*. Ha sido añadida a tu inventario.`,
+        return sock.sendMessage(jid, { 
+          text: `🎉 ¡Compra exitosa! Has adquirido a *${datosVenta.carta.name}* [${datosVenta.carta.rarity}] del mercado.`,
           mentions: [senderReal]
         });
       }
 
+      return sock.sendMessage(jid, { text: "❌ Subcomando inválido. Usa *.mercado sell [Nombre]* o *.mercado buy [ID]*" });
+
     } catch (e) {
       console.error(e);
-      return sock.sendMessage(jid, { text: "❌ Ocurrió un error en el mercado." });
+      return sock.sendMessage(jid, { text: "❌ Ocurrió un error en el sistema del mercado." });
     }
   }
 };

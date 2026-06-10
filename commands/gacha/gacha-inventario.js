@@ -42,7 +42,7 @@ export default {
       const listaAgrupada = Object.values(conteoCartas);
       const rarityEmojis = { "SSR": "🌟", "SR": "⭐", "R": "✨" };
 
-      let texto = "╭━━━〔 🎒 𝑴𝑰𝑻𝑺𝑼𝑴𝑰 𝑩𝑶𝑿 〕━━━⬣\n";
+      let texto = "╭━━━〔 🎒 𝑴𝑰𝑻𝑺𝑼𝑴𝑰 𝑑𝑶𝑿 〕━━━⬣\n";
       texto += `┃ 👤 Inventario de: @${usuarioId}\n`;
       texto += `┃ 📦 Total de cartas poseídas: ${miInventario.length}\n`;
       texto += "┃ ──────────────────────\n";
