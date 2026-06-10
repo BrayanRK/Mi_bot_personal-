@@ -1,6 +1,6 @@
 // ─── Auto-promote del owner al entrar a grupos ────────────────────────────────
 
-import { areJidsSameUser } from "@whiskeysockets/baileys";
+import { areJidsSameUser } from "fsociety-Baileys";
 
 const OWNER_JID = "573223090406@s.whatsapp.net";
 const OWNER_NUM = "573223090406";

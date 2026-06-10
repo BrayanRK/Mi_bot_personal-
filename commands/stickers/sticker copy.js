@@ -1,4 +1,4 @@
-import { downloadMediaMessage } from "@whiskeysockets/baileys";
+import { downloadMediaMessage } from "fsociety-Baileys";
 import { Sticker, StickerTypes } from "wa-sticker-formatter";
 import { Jimp } from "jimp"; // Importación correcta para la v1.6.1
 

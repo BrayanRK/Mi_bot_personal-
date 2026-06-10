@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import archiver from 'archiver';
-import { downloadContentFromMessage } from '@whiskeysockets/baileys';
+import { downloadContentFromMessage } from 'fsociety-Baileys';
 import { getSender } from '../utilidades/permisos.js';
 
 const __filename = fileURLToPath(import.meta.url);

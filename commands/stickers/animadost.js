@@ -1,4 +1,4 @@
-import { downloadMediaMessage } from "@whiskeysockets/baileys";
+import { downloadMediaMessage } from "fsociety-Baileys";
 import { Sticker } from "wa-sticker-formatter";
 import fs from "fs-extra";
 import path from "path";

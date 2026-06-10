@@ -3,7 +3,7 @@ import path from "path";
 import {
   downloadMediaMessage,
   normalizeMessageContent,
-} from "@whiskeysockets/baileys";
+} from "fsociety-Baileys";
 import { TEMP_DIR } from "../../config.js";
 
 function getQuotedInfo(msg) {

@@ -1,4 +1,4 @@
-import { downloadMediaMessage } from "@whiskeysockets/baileys";
+import { downloadMediaMessage } from "fsociety-Baileys";
 import fs from "fs-extra";
 import path from "path";
 import crypto from "crypto";

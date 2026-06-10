@@ -1,4 +1,4 @@
-import { downloadMediaMessage } from "@whiskeysockets/baileys";
+import { downloadMediaMessage } from "fsociety-Baileys";
 import { Sticker, StickerTypes } from "wa-sticker-formatter";
 
 export default {

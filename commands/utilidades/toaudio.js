@@ -2,7 +2,7 @@
 //  toaudio.js — Convertir video a audio
 // ═══════════════════════════════════════════
 
-import { downloadMediaMessage } from "@whiskeysockets/baileys";
+import { downloadMediaMessage } from "fsociety-Baileys";
 import fs from "fs-extra";
 import path from "path";
 import { exec } from "child_process";
