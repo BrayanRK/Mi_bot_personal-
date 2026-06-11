@@ -22,7 +22,7 @@ export default {
     const text = args.join(" ").trim();
     const tiktokUrl = extractTikTokUrl(text);
 
-    try { await sock.sendMessage(jid, { react: { text: "⏳", key: msg.key } }); } catch {}
+    
 
     // ── MODO 1: LINK DIRECTO ──────────────────────────────
     if (tiktokUrl) {
@@ -53,10 +53,10 @@ export default {
           ptv: false,
         }, { quoted: msg });
 
-        try { await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } }); } catch {}
+        
 
       } catch (e) {
-        try { await sock.sendMessage(jid, { react: { text: "❌", key: msg.key } }); } catch {}
+        
 
         let mensajeError = "❌ Error al procesar.";
         if (e.code === "ECONNABORTED") mensajeError = "⏳ Tiempo agotado. Intenta de nuevo.";
@@ -73,7 +73,7 @@ export default {
         );
 
         if (!data?.status || !data?.meta?.length) {
-          try { await sock.sendMessage(jid, { react: { text: "❌", key: msg.key } }); } catch {}
+          
           return reply(sock, jid, `❌ No encontré videos para: *${text}*`, msg);
         }
 
@@ -107,13 +107,14 @@ export default {
           }
         }
 
-        try { await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } }); } catch {}
+        
 
       } catch (e) {
         console.error("[TT SEARCH ERROR]", e.message);
-        try { await sock.sendMessage(jid, { react: { text: "❌", key: msg.key } }); } catch {}
+        
         await reply(sock, jid, `❌ Error en la búsqueda: ${e.message}`, msg);
       }
     }
   },
 };
+

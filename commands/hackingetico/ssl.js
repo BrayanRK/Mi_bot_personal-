@@ -11,11 +11,11 @@ export default {
 
     let domain = args[0]?.trim().replace(/https?:\/\//i, "").replace(/\/.*/,"").replace(/:.*/, "");
     if (!domain) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Uso: `.ssl ejemplo.com`", msg);
     }
 
-    await react("⏳");
+    
 
     try {
       const cert = await new Promise((resolve, reject) => {
@@ -47,11 +47,11 @@ export default {
         `🔢 *Serial:* ${cert.serialNumber || "N/A"}\n` +
         (cert.subjectaltname ? `🌐 *SANs:* ${cert.subjectaltname.replace(/DNS:/g, "").slice(0, 200)}` : "");
 
-      await react("✅");
+      
       await reply(sock, jid, texto, msg);
 
     } catch (e) {
-      await react("❌");
+      
       await reply(sock, jid, `❌ ${e.message}`, msg);
     }
   },

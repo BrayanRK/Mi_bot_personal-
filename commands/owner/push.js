@@ -63,7 +63,7 @@ export default {
         .map((c, i) => `┃  ${i === 0 ? "🟢" : "⚪"} ${c}`)
         .join("\n");
 
-      try { await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } }); } catch {}
+      
 
       await reply(sock, jid,
         `╭━━━〔 ✅ PUSH EXITOSO 〕━━━⬣\n` +
@@ -84,7 +84,7 @@ export default {
       );
 
     } catch (e) {
-      try { await sock.sendMessage(jid, { react: { text: "❌", key: msg.key } }); } catch {}
+      
       const reason = e.stderr?.toString() || e.message;
       await reply(sock, jid,
         `╭━━━〔 ❌ ERROR EN PUSH 〕━━━⬣\n` +

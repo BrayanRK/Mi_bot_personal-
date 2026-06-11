@@ -11,11 +11,11 @@ export default {
 
     const texto = args.join(" ").trim();
     if (!texto) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Escribe un texto.\nEj: `.hash hola mundo`", msg);
     }
 
-    await react("✅");
+    
 
     const md5    = crypto.createHash("md5").update(texto).digest("hex");
     const sha1   = crypto.createHash("sha1").update(texto).digest("hex");

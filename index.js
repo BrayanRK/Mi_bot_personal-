@@ -26,12 +26,14 @@ import { estado } from "./commands/owner/mantenimiento.js";
 import { getSesionJuego } from "./commands/juegos/numjuego.js";
 import { loadDB, saveDB, getUser, saveNombre, numId } from "./commands/economia/db.js";
 
-const MSG_STORE_LIMIT = 1000;
-const OWNER           = "573223090406@s.whatsapp.net";
-const SESSION_FILE    = "./session_phone.json";
-const MAX_RETRIES     = 5;
+// ─── Constantes ───────────────────────────────────────────────────────────────
+const MSG_STORE_LIMIT      = 1000;
+const OWNER                = "573223090406@s.whatsapp.net";
+const SESSION_FILE         = "./session_phone.json";
+const MAX_RETRIES          = 5;
 const BASE_RECONNECT_DELAY = 3000;
 
+// Comandos que manejan sus propias reacciones
 const SELF_REACT_CMDS = new Set([
   "tt", "tiktok", "ttsearch",
   "fb", "facebook", "fbmp4",
@@ -41,6 +43,7 @@ const SELF_REACT_CMDS = new Set([
   "applemusic", "amusic", "apple", "am",
 ]);
 
+// ─── Logger completamente silencioso ─────────────────────────────────────────
 function crearLoggerSilencioso() {
   const noop = () => {};
   const logger = {
@@ -52,18 +55,21 @@ function crearLoggerSilencioso() {
   return logger;
 }
 
-let sock             = null;
-let reconnectTimer   = null;
-let sessionRetries   = 0;
+// ─── Estado global ────────────────────────────────────────────────────────────
+let sock               = null;
+let reconnectTimer     = null;
+let sessionRetries     = 0;
 let eventosRegistrados = false;
-let commands         = {};
+let commands           = {};
 
 const mensajesProcesados = new Set();
 
+// ─── Init ─────────────────────────────────────────────────────────────────────
 await fs.ensureDir(TEMP_DIR);
 commands = await loadCommands();
 console.log(`✅ ${Object.keys(commands).length} comandos cargados:`, Object.keys(commands).join(", "));
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function askQuestion(prompt) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -117,16 +123,15 @@ function destroySock() {
 
 function scheduleReconnect() {
   if (reconnectTimer) return;
-
   const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(2, sessionRetries - 1), 30_000);
   console.log(`⏳ Reconectando en ${(delay / 1000).toFixed(1)}s... (intento ${sessionRetries}/${MAX_RETRIES})`);
-
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     startBot();
   }, delay);
 }
 
+// ─── Detección de tipo y body del mensaje ─────────────────────────────────────
 function getMsgInfo(msg) {
   const m = msg.message;
   if (!m) return { tipo: "vacío", detalle: "", body: "" };
@@ -150,6 +155,7 @@ function getMsgInfo(msg) {
   return { tipo: "desconocido", detalle: "", body };
 }
 
+// ─── Bot ──────────────────────────────────────────────────────────────────────
 async function startBot() {
   destroySock();
 
@@ -182,13 +188,12 @@ async function startBot() {
     getMessage: async (key) => {
       return sock?.msgStore?.get(key.id)?.message ?? { conversation: "" };
     },
-    connectTimeoutMs: 60_000,
+    connectTimeoutMs:    60_000,
     keepAliveIntervalMs: 25_000,
     retryRequestDelayMs: 2000,
   });
 
   sock.msgStore = new Map();
-
   sock.ev.on("creds.update", saveCreds);
 
   const credsPath  = `${CONFIG.sessionDir}/creds.json`;
@@ -212,6 +217,7 @@ async function startBot() {
     console.log("🔄 Sesión en disco encontrada, reconectando sin pedir código...");
   }
 
+  // Registrar eventos de grupo UNA SOLA VEZ
   if (!eventosRegistrados) {
     eventosRegistrados = true;
     setupAutoPromote(sock);
@@ -220,10 +226,9 @@ async function startBot() {
     iniciarCronBuenasNoches(sock);
   }
 
+  // ── Conexión ──────────────────────────────────────────────────────────────
   sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
-      console.log("⚠️  Se generó QR inesperado. Usa el código de vinculación.");
-    }
+    if (qr) console.log("⚠️  Se generó QR inesperado. Usa el código de vinculación.");
 
     if (connection === "open") {
       sessionRetries = 0;
@@ -242,7 +247,7 @@ async function startBot() {
       if (statusCode === DisconnectReason.loggedOut) {
         console.log("🗑️  Sesión cerrada por WhatsApp. Borrando y reiniciando...");
         await clearSession();
-        sessionRetries = 0;
+        sessionRetries     = 0;
         eventosRegistrados = false;
         scheduleReconnect();
         return;
@@ -271,13 +276,13 @@ async function startBot() {
     }
   });
 
+  // ── Mensajes ───────────────────────────────────────────────────────────────
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
 
     for (const msg of messages) {
       const stanzaId = msg?.key?.id;
       if (!stanzaId) continue;
-
       if (mensajesProcesados.has(stanzaId)) continue;
 
       try {
@@ -289,6 +294,9 @@ async function startBot() {
         let jid = msg.key.remoteJid;
         if (!jid) continue;
 
+        if (jid === "status@broadcast") continue;
+
+        // Resolver LID → JID real
         if (jid.endsWith("@lid")) {
           if (msg.key?.senderPn) {
             jid = msg.key.senderPn.includes("@")
@@ -302,41 +310,38 @@ async function startBot() {
 
         let sender = getSender(msg);
 
-// Resolver @lid a número real
-if (sender?.endsWith("@lid")) {
-  const isGrp = (msg.key.remoteJid || "").endsWith("@g.us");
+        // Resolver sender @lid → número real
+        if (sender?.endsWith("@lid")) {
+          const isGrp = (msg.key.remoteJid || "").endsWith("@g.us");
 
-  // 1. participantPn directo en msg.key (más confiable)
-  if (msg.key?.participantPn) {
-    sender = msg.key.participantPn.includes("@")
-      ? msg.key.participantPn
-      : `${msg.key.participantPn.replace(/\D/g, "")}@s.whatsapp.net`;
-  } else if (isGrp) {
-    try {
-      const meta = await sock.groupMetadata(msg.key.remoteJid);
-      const found = meta.participants.find(p => p.id === sender);
+          if (msg.key?.participantPn) {
+            sender = msg.key.participantPn.includes("@")
+              ? msg.key.participantPn
+              : `${msg.key.participantPn.replace(/\D/g, "")}@s.whatsapp.net`;
+          } else if (isGrp) {
+            try {
+              const meta  = await sock.groupMetadata(msg.key.remoteJid);
+              const found = meta.participants.find(p => p.id === sender);
+              if (found?.jid) {
+                sender = found.jid.includes("@") ? found.jid : `${found.jid}@s.whatsapp.net`;
+              } else if (found?.phoneNumber) {
+                sender = `${found.phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
+              } else if (found?.id && !found.id.endsWith("@lid")) {
+                sender = found.id;
+              }
+            } catch (e) {
+              console.log("[LID] error groupMetadata:", e.message);
+            }
+          }
+        }
 
-      if (found?.jid) {
-        // 2. campo jid del participante
-        sender = found.jid.includes("@") ? found.jid : `${found.jid}@s.whatsapp.net`;
-      } else if (found?.phoneNumber) {
-        // 3. phoneNumber
-        sender = `${found.phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
-      } else if (found?.id && !found.id.endsWith("@lid")) {
-        // 4. id normal
-        sender = found.id;
-      }
-    } catch(e) {
-      console.log("[LID] error groupMetadata:", e.message);
-    }
-  }
-}
         const isOwner = checkIsOwner(sender);
 
         const tempBody =
           msg.message?.conversation ||
           msg.message?.extendedTextMessage?.text || "";
 
+        // Ignorar mensajes propios que no sean comandos
         if (msg.key.fromMe && !tempBody.startsWith(CONFIG.prefix)) continue;
 
         const isGroup             = jid.endsWith("@g.us");
@@ -350,45 +355,42 @@ if (sender?.endsWith("@lid")) {
 
         if (!body && !msg.message?.documentMessage) continue;
 
+        // msgStore
         sock.msgStore.set(stanzaId, msg);
         if (sock.msgStore.size > MSG_STORE_LIMIT) {
           sock.msgStore.delete(sock.msgStore.keys().next().value);
         }
 
         await checkAutoForward(sock, msg);
-
         if (await checkAntiLink(sock, msg, jid, sender, body)) continue;
         if (await checkAntispam(sock, msg, jid, sender)) continue;
-
         if (isGroup && !isOwner && !await grupoPermitido(jid)) continue;
 
+        // Mantenimiento
         if (estado.mantenimiento && !isOwner) {
           await reply(sock, jid,
-            `🔧 *El bot está en mantenimiento*\n\n` +
-            `⚠️ No disponible por el momento.\n` +
-            `Intenta más tarde.`,
+            `🔧 *El bot está en mantenimiento*\n\n⚠️ No disponible por el momento.\nIntenta más tarde.`,
             msg
           );
           continue;
         }
 
+        // ─── IA por mención o respuesta al bot en grupos ───────────────────
         if (isGroup && body && !body.startsWith(CONFIG.prefix)) {
-          const menciones        = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-          const contextInfo      = msg.message?.extendedTextMessage?.contextInfo;
+          const menciones         = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+          const contextInfo       = msg.message?.extendedTextMessage?.contextInfo;
           const participantQuoted = contextInfo?.participant || "";
-          const botNum           = sock.user?.id?.split(":")[0];
+          const botNum            = sock.user?.id?.split(":")[0];
 
           let activarIA = false;
 
           try {
             const metadata = await sock.groupMetadata(jid);
-
             const botParticipant = metadata.participants.find(p => {
               const pid = p.id.split("@")[0].split(":")[0];
               const ppn = (p.phoneNumber || "").replace(/\D/g, "");
               return pid === botNum || ppn === botNum;
             });
-
             const botLid = botParticipant?.id || "";
 
             const esMencionado = botLid
@@ -399,7 +401,6 @@ if (sender?.endsWith("@lid")) {
               (participantQuoted.includes(botNum) || participantQuoted === botLid);
 
             activarIA = esMencionado || esRespuesta;
-
           } catch (e) {
             const esMencionado = menciones.some(m => m.includes(botNum));
             const esRespuesta  = participantQuoted.includes(botNum);
@@ -416,51 +417,62 @@ if (sender?.endsWith("@lid")) {
           }
         }
 
+        // ─── Mensajes sin prefix (sesiones activas de juegos) ─────────────
+        if (!body.startsWith(CONFIG.prefix)) {
+          const bodyTrim    = body.trim();
+          const sesionJuego = getSesionJuego(jid, sender);
+
+          if (sesionJuego && commands["numjuego"]) {
+            await commands["numjuego"](sock, msg, [bodyTrim], jid, isOwner, isGroup, sender);
+          }
+
+          // IMPORTANTE: siempre continuar — no procesar como comando
+          continue;
+        }
+
+        // ─── Comandos con prefix ───────────────────────────────────────────
         const [rawCmd, ...args] = body.slice(CONFIG.prefix.length).trim().split(/\s+/);
         if (!rawCmd) continue;
 
         const cmd = rawCmd.toLowerCase();
         if (!commands[cmd]) continue;
 
+        console.log(`[CMD] Ejecutando: ${cmd} | args: ${args.join(" ")}`);
+
         try {
-          if (!SELF_REACT_CMDS.has(cmd)) await react(sock, msg, "⏳");
+          //if (!SELF_REACT_CMDS.has(cmd)) await react(sock, msg, "⏳");
 
+          // Guardar nombre en economía
           try {
-  const _ecoDb = loadDB();
+            const _ecoDb     = loadDB();
+            const _rawSender = msg?.key?.participant || msg?.key?.remoteJid || sender || "";
+            let   _ecoId;
 
-  // Obtener el JID crudo del participante
-  const _rawSender = msg?.key?.participant || msg?.key?.remoteJid || sender || "";
+            if (_rawSender.endsWith("@lid")) {
+              if (jid.endsWith("@g.us")) {
+                try {
+                  const meta  = await sock.groupMetadata(jid);
+                  const found = meta.participants.find(p => p.id === _rawSender);
+                  if (found?.phoneNumber) {
+                    _ecoId = found.phoneNumber.replace(/\D/g, "");
+                  } else if (found?.id && !found.id.endsWith("@lid")) {
+                    _ecoId = numId(found.id);
+                  }
+                } catch {}
+              }
+              if (!_ecoId) _ecoId = numId(sender);
+            } else {
+              _ecoId = numId(_rawSender);
+            }
 
-  let _ecoId;
-
-  if (_rawSender.endsWith("@lid")) {
-    // Intentar resolver el @lid contra los metadatos del grupo
-    const isGrp = jid.endsWith("@g.us");
-    if (isGrp) {
-      try {
-        const meta = await sock.groupMetadata(jid);
-        const found = meta.participants.find(p => p.id === _rawSender);
-        if (found?.phoneNumber) {
-          _ecoId = found.phoneNumber.replace(/\D/g, "");
-        } else if (found?.id && !found.id.endsWith("@lid")) {
-          _ecoId = numId(found.id);
-        }
-      } catch {}
-    }
-    // Si no se resolvió, usar el sender normal
-    if (!_ecoId) _ecoId = numId(sender);
-  } else {
-    _ecoId = numId(_rawSender);
-  }
-
-  getUser(_ecoDb, _ecoId);
-  saveNombre(_ecoDb, _ecoId, msg?.pushName);
-  saveDB(_ecoDb);
-} catch {}
+            getUser(_ecoDb, _ecoId);
+            saveNombre(_ecoDb, _ecoId, msg?.pushName);
+            saveDB(_ecoDb);
+          } catch {}
 
           await commands[cmd](sock, msg, args, jid, isOwner, isGroup, sender);
 
-          if (!SELF_REACT_CMDS.has(cmd)) await react(sock, msg, "✅");
+          //if (!SELF_REACT_CMDS.has(cmd)) await react(sock, msg, "✅");
 
         } catch (e) {
           console.error(`❌ Error en comando "${cmd}":`, e);
@@ -477,14 +489,9 @@ if (sender?.endsWith("@lid")) {
   });
 }
 
-process.on("uncaughtException", (err) => {
-  console.error("💥 uncaughtException:", err.message);
-});
-
-process.on("unhandledRejection", (reason) => {
-  console.error("💥 unhandledRejection:", reason?.message ?? reason);
-});
-
+// ─── Errores globales ─────────────────────────────────────────────────────────
+process.on("uncaughtException",  (err)    => console.error("💥 uncaughtException:",  err.message));
+process.on("unhandledRejection", (reason) => console.error("💥 unhandledRejection:", reason?.message ?? reason));
 process.on("SIGINT",  () => { console.log("\n👋 Cerrando bot..."); destroySock(); process.exit(0); });
 process.on("SIGTERM", () => { console.log("\n👋 SIGTERM recibido."); destroySock(); process.exit(0); });
 

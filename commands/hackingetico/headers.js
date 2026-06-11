@@ -11,12 +11,12 @@ export default {
 
     let url = args[0]?.trim();
     if (!url) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Uso: `.headers https://ejemplo.com`", msg);
     }
     if (!/^https?:\/\//i.test(url)) url = "https://" + url;
 
-    await react("⏳");
+    
 
     try {
       const { headers, status } = await axios.head(url, {
@@ -49,11 +49,11 @@ export default {
       texto += found.join("\n\n");
       if (resto.length) texto += "\n\n*Otros:*\n" + resto.join("\n");
 
-      await react("✅");
+      
       await reply(sock, jid, texto, msg);
 
     } catch (e) {
-      await react("❌");
+      
       await reply(sock, jid, `❌ No se pudo conectar: ${e.message}`, msg);
     }
   },

@@ -77,18 +77,12 @@ export default {
   name: "ig",
   aliases: ["instagram", "reel", "igvideo"],
   run: async (sock, msg, args, jid) => {
-    const react = async (emoji) => {
-      try {
-        await sock.sendMessage(msg.key.remoteJid, {
-          react: { text: emoji, key: msg.key },
-        });
-      } catch {}
-    };
+    
 
     const igUrl = extractIgUrl(args.join(" "));
 
     if (!igUrl) {
-      await react("❌");
+      
       return reply(
         sock, jid,
         "❌ Envía un link válido de Instagram.\nEj: `.ig https://www.instagram.com/reel/ABC123/`",
@@ -96,7 +90,7 @@ export default {
       );
     }
 
-    await react("⏳");
+    
     await reply(sock, jid, "⬇️ *Descargando Instagram...*", msg);
     await fs.ensureDir(TEMP_DIR);
 
@@ -158,7 +152,7 @@ export default {
         }, { quoted: msg });
       }
 
-      await react("✅");
+      
 
     } catch (e) {
       console.error("[IG ERROR]", e.response?.data || e.message);
@@ -173,7 +167,7 @@ export default {
       else if (status >= 500)
         msgErr = "⏳ El servidor de descarga está en mantenimiento, intenta en 1 minuto.";
 
-      await react("❌");
+      
       await reply(sock, jid, msgErr, msg);
 
     } finally {
@@ -181,3 +175,4 @@ export default {
     }
   },
 };
+

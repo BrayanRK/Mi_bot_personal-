@@ -81,18 +81,12 @@ export default {
   name: "spotify",
   aliases: ["spty", "spoti", "cancion", "song"],
   run: async (sock, msg, args, jid) => {
-    const react = async (emoji) => {
-      try {
-        await sock.sendMessage(msg.key.remoteJid, {
-          react: { text: emoji, key: msg.key },
-        });
-      } catch {}
-    };
+    
 
     const input = args.join(" ").trim();
 
     if (!input) {
-      await react("❌");
+      
       return reply(
         sock, jid,
         "❌ *Uso:*\n" +
@@ -102,7 +96,7 @@ export default {
       );
     }
 
-    await react("⏳");
+    
     await fs.ensureDir(TEMP_DIR);
     const output = path.join(TEMP_DIR, `spotify_${Date.now()}.mp3`);
 
@@ -162,7 +156,7 @@ export default {
         ptt: false,
       }, { quoted: msg });
 
-      await react("✅");
+      
       await reply(sock, jid, `✅ *${title}*\n👤 ${artist}\n📦 ${sizeMB}MB`, msg);
 
     } catch (e) {
@@ -178,7 +172,7 @@ export default {
       else if (e.message.includes("procesando"))
         msgErr = "⏳ La canción se está procesando, espera 1 minuto e intenta de nuevo.";
 
-      await react("❌");
+      
       await reply(sock, jid, msgErr, msg);
 
     } finally {
@@ -186,3 +180,4 @@ export default {
     }
   },
 };
+

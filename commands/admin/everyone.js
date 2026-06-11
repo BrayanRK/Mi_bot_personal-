@@ -23,3 +23,4 @@ export const everyone = groupCmd(
 );
 
 export default everyone;
+

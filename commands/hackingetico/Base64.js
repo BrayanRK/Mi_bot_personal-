@@ -12,7 +12,7 @@ export default {
     const texto = args.slice(1).join(" ").trim();
 
     if (!modo || !texto || !["encode", "decode", "e", "d"].includes(modo)) {
-      await react("❌");
+      
       return reply(sock, jid,
         "❌ Uso:\n" +
         "`.b64 encode <texto>` — codificar\n" +
@@ -31,13 +31,13 @@ export default {
 
       const accion = (modo === "encode" || modo === "e") ? "🔒 Codificado" : "🔓 Decodificado";
 
-      await react("✅");
+      
       return reply(sock, jid,
         `*${accion}:*\n━━━━━━━━━━━━━━━━━━━━\n${resultado}`,
         msg
       );
     } catch (e) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Texto base64 inválido.", msg);
     }
   },

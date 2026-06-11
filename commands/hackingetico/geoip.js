@@ -11,13 +11,13 @@ export default {
 
     let target = args[0]?.trim();
     if (!target) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Uso: `.geoip 8.8.8.8` o `.geoip ejemplo.com`", msg);
     }
 
     // Si es dominio, resolver IP primero
     const isDomain = /^[a-zA-Z]/.test(target) && !target.includes(":");
-    await react("⏳");
+    
 
     try {
       let ip = target;
@@ -51,11 +51,11 @@ export default {
         `\n🔒 *Proxy/VPN:* ${data.proxy ? "✅ Sí" : "❌ No"}` +
         `\n🖥️ *Hosting:* ${data.hosting ? "✅ Sí" : "❌ No"}`;
 
-      await react("✅");
+      
       await reply(sock, jid, texto, msg);
 
     } catch (e) {
-      await react("❌");
+      
       await reply(sock, jid, `❌ ${e.message}`, msg);
     }
   },

@@ -19,3 +19,4 @@ export const open = groupCmd("open", async (sock, msg, args, jid, sender) => {
 });
 
 export default open;
+

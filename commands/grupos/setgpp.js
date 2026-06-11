@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { downloadMediaMessage } from "@whiskeysockets/baileys";
+import { downloadMediaMessage } from "fsociety-Baileys";
 
 async function getReply() {
   const { reply } = await import("../../utils.js");

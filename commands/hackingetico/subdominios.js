@@ -11,11 +11,11 @@ export default {
 
     const domain = args[0]?.trim().replace(/https?:\/\//i, "").replace(/\/.*/,"");
     if (!domain) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Uso: `.subdominios ejemplo.com`", msg);
     }
 
-    await react("⏳");
+    
     await reply(sock, jid, `🔍 *Buscando subdominios de* ${domain}...`, msg);
 
     try {
@@ -41,7 +41,7 @@ export default {
       const lista = subs.slice(0, 50).map((s, i) => `${i + 1}. ${s}`).join("\n");
       const extra = total > 50 ? `\n... y ${total - 50} más` : "";
 
-      await react("✅");
+      
       await reply(sock, jid,
         `🌐 *Subdominios de* ${domain}\n` +
         `📊 Total encontrados: *${total}*\n\n` +
@@ -50,7 +50,7 @@ export default {
       );
 
     } catch (e) {
-      await react("❌");
+      
       await reply(sock, jid, `❌ ${e.message}`, msg);
     }
   },

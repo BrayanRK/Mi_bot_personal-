@@ -61,18 +61,12 @@ export default {
   name: "fb",
   aliases: ["facebook", "fbmp4"],
   run: async (sock, msg, args, jid) => {
-    const react = async (emoji) => {
-      try {
-        await sock.sendMessage(msg.key.remoteJid, {
-          react: { text: emoji, key: msg.key },
-        });
-      } catch {}
-    };
+    
 
     const fbUrl = extractFbUrl(args.join(" "));
 
     if (!fbUrl) {
-      await react("❌");
+      
       return reply(
         sock, jid,
         "❌ Envía un link válido de Facebook.\nEj: `.fb https://fb.watch/abc`",
@@ -80,7 +74,7 @@ export default {
       );
     }
 
-    await react("⏳");
+    
     await reply(sock, jid, "⬇️ *Descargando Facebook...*", msg);
     await fs.ensureDir(TEMP_DIR);
 
@@ -138,7 +132,7 @@ export default {
         }, { quoted: msg });
       }
 
-      await react("✅");
+      
 
     } catch (e) {
       console.error("[FB ERROR]", e.response?.data || e.message);
@@ -153,7 +147,7 @@ export default {
       else if (status >= 500)
         msgErr = "⏳ El servidor de descarga falló, intenta de nuevo.";
 
-      await react("❌");
+      
       await reply(sock, jid, msgErr, msg);
 
     } finally {
@@ -161,3 +155,4 @@ export default {
     }
   },
 };
+

@@ -11,11 +11,11 @@ export default {
 
     const ip = args[0]?.trim();
     if (!ip) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Escribe una IP.\nEj: `.ip 8.8.8.8`", msg);
     }
 
-    await react("⏳");
+    
 
     try {
       const { data } = await axios.get(`http://ip-api.com/json/${ip}?lang=es`, { timeout: 10000 });
@@ -35,11 +35,11 @@ export default {
         `🕐 *Zona horaria:* ${data.timezone || "?"}\n` +
         `📮 *Zip:* ${data.zip || "?"}`;
 
-      await react("✅");
+      
       return reply(sock, jid, txt, msg);
 
     } catch (e) {
-      await react("❌");
+      
       return reply(sock, jid, `❌ ${e.message}`, msg);
     }
   },

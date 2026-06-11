@@ -11,11 +11,11 @@ export default {
 
     const host = args[0]?.trim().replace(/https?:\/\//i, "").split("/")[0];
     if (!host) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Escribe un host o dominio.\nEj: `.checkhost google.com`", msg);
     }
 
-    await react("⏳");
+    
     await reply(sock, jid, `🔍 Verificando *${host}*...`, msg);
 
     try {
@@ -59,11 +59,11 @@ export default {
         `❌ *Nodos caídos:* ${offline}/${total}\n` +
         `⏱️ *Tiempo:* ${ms}ms`;
 
-      await react("✅");
+      
       return reply(sock, jid, txt, msg);
 
     } catch (e) {
-      await react("❌");
+      
       return reply(sock, jid, `❌ ${e.message}`, msg);
     }
   },

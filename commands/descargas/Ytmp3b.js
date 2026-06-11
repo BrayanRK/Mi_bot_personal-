@@ -53,7 +53,7 @@ export default {
 
     if (!input) return reply(sock, jid, "❌ *Uso:* .ytmp3b <link o nombre de canción>", msg);
 
-    try { await sock.sendMessage(jid, { react: { text: "⏳", key: msg.key } }); } catch {}
+    
 
     try {
       const videoId = getVideoId(input);
@@ -89,12 +89,13 @@ export default {
         ptt:      false,
       }, { quoted: msg });
 
-      try { await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } }); } catch {}
+      
 
     } catch (e) {
       console.error("[YTMP3B ERROR]", e.message);
-      try { await sock.sendMessage(jid, { react: { text: "❌", key: msg.key } }); } catch {}
+      
       await reply(sock, jid, `❌ ${e.message}`, msg);
     }
   },
 };
+

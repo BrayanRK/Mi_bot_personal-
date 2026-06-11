@@ -59,7 +59,7 @@ export default {
 
     if (!input) return reply(sock, jid, "❌ *Uso:* .ytmp4b <link o nombre del video>", msg);
 
-    try { await sock.sendMessage(jid, { react: { text: "⏳", key: msg.key } }); } catch {}
+    
 
     try {
       const videoId = getVideoId(input);
@@ -100,12 +100,13 @@ export default {
           `✅ *Listo!*`,
       }, { quoted: msg });
 
-      try { await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } }); } catch {}
+      
 
     } catch (e) {
       console.error("[YTMP4B ERROR]", e.message);
-      try { await sock.sendMessage(jid, { react: { text: "❌", key: msg.key } }); } catch {}
+      
       await reply(sock, jid, `❌ ${e.message}`, msg);
     }
   },
 };
+

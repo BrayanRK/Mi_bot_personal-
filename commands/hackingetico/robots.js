@@ -11,13 +11,13 @@ export default {
 
     let url = args[0]?.trim();
     if (!url) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Uso: `.robots https://ejemplo.com`", msg);
     }
     if (!/^https?:\/\//i.test(url)) url = "https://" + url;
 
     const base = new URL(url).origin;
-    await react("⏳");
+    
 
     try {
       const { data } = await axios.get(`${base}/robots.txt`, {
@@ -41,11 +41,11 @@ export default {
 
       texto += `📄 *Raw (primeras 20 líneas):*\n\`\`\`${lines.slice(0, 20).join("\n")}\`\`\``;
 
-      await react("✅");
+      
       await reply(sock, jid, texto, msg);
 
     } catch (e) {
-      await react("❌");
+      
       const msg404 = e.response?.status === 404
         ? "Este sitio no tiene robots.txt."
         : `❌ ${e.message}`;

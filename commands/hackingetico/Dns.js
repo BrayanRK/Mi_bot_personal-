@@ -11,11 +11,11 @@ export default {
 
     const domain = args[0]?.trim().replace(/https?:\/\//i, "").split("/")[0];
     if (!domain) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Escribe un dominio.\nEj: `.dns google.com`", msg);
     }
 
-    await react("⏳");
+    
 
     try {
       const tipos = ["A", "MX", "NS", "TXT", "AAAA"];
@@ -34,11 +34,11 @@ export default {
         }
       }
 
-      await react("✅");
+      
       return reply(sock, jid, txt, msg);
 
     } catch (e) {
-      await react("❌");
+      
       return reply(sock, jid, `❌ ${e.message}`, msg);
     }
   },

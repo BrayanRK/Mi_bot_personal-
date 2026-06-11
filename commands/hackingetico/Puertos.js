@@ -39,19 +39,19 @@ export default {
         lista += `*${p}* — ${info.nombre} ${info.riesgo}\n`;
       }
       lista += `\n💡 Usa _.puerto <número>_ para más detalles`;
-      await react("✅");
+      
       return reply(sock, jid, lista, msg);
     }
 
     if (isNaN(num) || num < 1 || num > 65535) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Puerto inválido. Rango: 1-65535", msg);
     }
 
     const info = PUERTOS[num];
 
     if (!info) {
-      await react("✅");
+      
       return reply(sock, jid,
         `🔌 *Puerto ${num}*\n━━━━━━━━━━━━━━━━━━━━\n` +
         `ℹ️ Puerto no registrado en la base de datos.\n` +
@@ -60,7 +60,7 @@ export default {
       );
     }
 
-    await react("✅");
+    
     return reply(sock, jid,
       `🔌 *Puerto ${num} — ${info.nombre}*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +

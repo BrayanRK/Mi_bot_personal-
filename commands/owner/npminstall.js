@@ -37,7 +37,7 @@ export default {
         timeout: 60000,
       }).trim();
 
-      try { await sock.sendMessage(jid, { react: { text: "✅", key: msg.key } }); } catch {}
+      
 
       return reply(sock, jid,
 `┏━━━°❀•°:🌸:°•❀°━━━┓
@@ -52,7 +52,7 @@ export default {
 ┗━━━°❀•°:🌸:°•❀°━━━┛`, msg);
 
     } catch (e) {
-      try { await sock.sendMessage(jid, { react: { text: "❌", key: msg.key } }); } catch {}
+      
 
       return reply(sock, jid,
 `┏━━━°❀•°:🌸:°•❀°━━━┓

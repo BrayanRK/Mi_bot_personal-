@@ -11,11 +11,11 @@ export default {
 
     const domain = args[0]?.trim().replace(/https?:\/\//i, "").split("/")[0];
     if (!domain) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Escribe un dominio.\nEj: `.whois google.com`", msg);
     }
 
-    await react("⏳");
+    
 
     try {
       const { data } = await axios.get(`https://api.domainsdb.info/v1/domains/search?domain=${domain}&zone=com`, { timeout: 10000 });
@@ -33,11 +33,11 @@ export default {
         `🌍 *País:* ${info.country || "?"}\n` +
         `🏢 *Ciudad:* ${info.city || "?"}`;
 
-      await react("✅");
+      
       return reply(sock, jid, txt, msg);
 
     } catch (e) {
-      await react("❌");
+      
       return reply(sock, jid, `❌ ${e.message}`, msg);
     }
   },

@@ -180,10 +180,10 @@ export default {
     const quoted = { quoted: msg };
     const input = args.join(" ").trim();
 
-    try { await sock.sendMessage(msg.key.remoteJid, { react: { text: "⏳", key: msg.key } }); } catch {}
+    
 
     if (!input) {
-      try { await sock.sendMessage(msg.key.remoteJid, { react: { text: "❌", key: msg.key } }); } catch {}
+      
       return reply(sock, jid, "❌ *Uso:*\n.play <nombre de canción>\n.play <link de YouTube>", msg);
     }
 
@@ -197,7 +197,7 @@ export default {
 
       if (!videoUrl) {
         if (isHttpUrl(input)) {
-          try { await sock.sendMessage(msg.key.remoteJid, { react: { text: "❌", key: msg.key } }); } catch {}
+          
           return reply(sock, jid, "❌ Envía un link válido de YouTube.", msg);
         }
 
@@ -245,7 +245,7 @@ export default {
             fileName: fileNameToSend,
             caption: `🎵 ${title}`,
           }, quoted);
-          try { await sock.sendMessage(msg.key.remoteJid, { react: { text: "✅", key: msg.key } }); } catch {}
+          
           return;
         }
       }
@@ -267,11 +267,11 @@ export default {
         }, quoted);
       }
 
-      try { await sock.sendMessage(msg.key.remoteJid, { react: { text: "✅", key: msg.key } }); } catch {}
+      
 
     } catch (e) {
       console.error("[YTMP3 ERROR]", e.message);
-      try { await sock.sendMessage(msg.key.remoteJid, { react: { text: "❌", key: msg.key } }); } catch {}
+      
 
       const rawMsg = String(e?.message || "").toLowerCase();
       let humanMsg = `❌ ${e.message || "Error al descargar el audio."}`;
@@ -285,3 +285,4 @@ export default {
     }
   },
 };
+

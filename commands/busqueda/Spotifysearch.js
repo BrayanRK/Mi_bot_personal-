@@ -13,11 +13,11 @@ export default {
 
     const query = args.join(" ").trim();
     if (!query) {
-      await react("❌");
+      
       return reply(sock, jid, "❌ Escribe algo para buscar.\nEj: `.sps bad bunny`", msg);
     }
 
-    await react("⏳");
+    
 
     try {
       const { data } = await axios.get(APIURL, {
@@ -42,12 +42,12 @@ export default {
         texto += `   🔗 ${t.url || t.link || ""}\n\n`;
       });
 
-      await react("✅");
+      
       return reply(sock, jid, texto.trim(), msg);
 
     } catch (e) {
       console.error("[SPS ERROR]", e.response?.data || e.message);
-      await react("❌");
+      
       return reply(sock, jid, `❌ ${e.response?.data?.detail || e.message}`, msg);
     }
   },
