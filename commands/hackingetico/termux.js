@@ -3,44 +3,53 @@ import path from "path";
 
 export default {
   name: "termux",
-  aliases: ["apktermux"],
+  aliases: ["apktermux", "termuxapk"],
 
   async run(sock, msg, args, chatId) {
 
     try {
 
-      const url =
-        "https://github.com/termux/termux-app/releases/latest/download/termux-app_v0.119.0+github-debug_universal.apk";
-
-      const res = await fetch(url);
+      const res = await fetch(
+        "https://api.github.com/repos/termux/termux-app/releases/latest"
+      );
 
       if (!res.ok) {
-        throw new Error("No se pudo descargar el APK");
+        throw new Error("No se pudo obtener la última versión.");
       }
 
-      const buffer = Buffer.from(await res.arrayBuffer());
+      const data = await res.json();
 
-      const filePath = path.join(process.cwd(), "termux.apk");
+      const apk = data.assets.find(a =>
+        a.name.endsWith(".apk")
+      );
 
-      fs.writeFileSync(filePath, buffer);
+      if (!apk) {
+        throw new Error("No se encontró ningún APK.");
+      }
 
       await sock.sendMessage(chatId, {
-        document: fs.readFileSync(filePath),
-        fileName: "Termux.apk",
-        mimetype: "application/vnd.android.package-archive",
-        caption:
-`💻 *Termux Oficial*
+        text:
+`💻 *TERMUX OFICIAL*
 
-✅ Descargado desde GitHub oficial.
-🚀 Ideal para bots de WhatsApp.`
+📦 Versión: ${data.tag_name}
+
+⬇️ Descarga:
+${apk.browser_download_url}
+
+📄 Archivo:
+${apk.name}
+
+🏠 Repositorio:
+https://github.com/termux/termux-app`
       }, { quoted: msg });
-
-      fs.unlinkSync(filePath);
 
     } catch (e) {
 
       await sock.sendMessage(chatId, {
-        text: `❌ Error:\n${e.message}`
+        text:
+`❌ Error al obtener Termux
+
+${e.message}`
       }, { quoted: msg });
 
     }

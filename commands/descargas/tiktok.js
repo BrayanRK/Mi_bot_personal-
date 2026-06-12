@@ -66,55 +66,99 @@ export default {
       }
 
     // ── MODO 2: BÚSQUEDA ─────────────────────────────────
-    } else {
+} else {
+
+  try {
+
+    const { data } = await axios.get(
+      `https://api.delirius.store/search/tiktoksearch?query=${encodeURIComponent(text)}`
+    );
+
+    if (!data?.status || !data?.meta?.length) {
+
+      return reply(
+        sock,
+        jid,
+        `❌ No encontré videos para: *${text}*`,
+        msg
+      );
+    }
+
+    const videos = data.meta.slice(0, 4);
+
+    await reply(
+      sock,
+      jid,
+      `🔍 *Resultados para:* ${text}\n🎵 Enviando ${videos.length} videos...`,
+      msg
+    );
+
+    for (const v of videos) {
+
       try {
-        const { data } = await axios.get(
-          `https://api.delirius.store/search/tiktoksearch?query=${encodeURIComponent(text)}`
+
+        const titulo   = v.title || "TikTok Video";
+        const autor    = v.author?.nickname || v.author?.username || "Anónimo";
+        const likes    = v.like?.toLocaleString() || "?";
+        const duracion = v.duration || "?";
+
+        // Obtener MP4 real
+        const { data: dl } = await axios.get(
+          `https://api.delirius.store/download/tiktok?url=${encodeURIComponent(v.url)}`
         );
 
-        if (!data?.status || !data?.meta?.length) {
-          
-          return reply(sock, jid, `❌ No encontré videos para: *${text}*`, msg);
-        }
+        if (
+          !dl?.status ||
+          !dl?.data?.meta?.media?.[0]?.org
+        ) continue;
 
-        const videos = data.meta.slice(0, 4);
+        const videoUrl = dl.data.meta.media[0].org;
 
-        await reply(sock, jid,
-          `🔍 *Resultados para:* ${text}\n` +
-          `🎵 Enviando ${videos.length} videos...`,
-          msg
+        // Descargar buffer
+        const video = await axios.get(videoUrl, {
+          responseType: "arraybuffer",
+          timeout: 60000
+        });
+
+        await sock.sendMessage(
+          jid,
+          {
+            video: Buffer.from(video.data),
+            mimetype: "video/mp4",
+            ptv: false,
+            caption:
+              `🎵 *${titulo}*\n` +
+              `👤 *Autor:* ${autor}\n` +
+              `❤️ *Likes:* ${likes}\n` +
+              `⏱️ *Duración:* ${duracion}s`
+          },
+          { quoted: msg }
         );
-
-        for (const v of videos) {
-          const titulo   = v.title || "TikTok Video";
-          const autor    = v.author?.nickname || v.author?.username || "Anónimo";
-          const likes    = v.like?.toLocaleString() || "?";
-          const duracion = v.duration || "?";
-
-          try {
-            await sock.sendMessage(jid, {
-              video: { url: v.url },
-              caption:
-                `🎵 *${titulo}*\n` +
-                `👤 *Autor:* ${autor}\n` +
-                `❤️ *Likes:* ${likes}\n` +
-                `⏱️ *Duración:* ${duracion}s`,
-              mimetype: "video/mp4",
-              ptv: false,
-            }, { quoted: msg });
-          } catch (e) {
-            console.error("[TT VIDEO ERROR]", e.message);
-          }
-        }
-
-        
 
       } catch (e) {
-        console.error("[TT SEARCH ERROR]", e.message);
-        
-        await reply(sock, jid, `❌ Error en la búsqueda: ${e.message}`, msg);
+
+        console.error(
+          "[TT DOWNLOAD ERROR]",
+          e.message
+        );
+
       }
     }
-  },
-};
 
+  } catch (e) {
+
+    console.error(
+      "[TT SEARCH ERROR]",
+      e.message
+    );
+
+    await reply(
+      sock,
+      jid,
+      `❌ Error en la búsqueda: ${e.message}`,
+      msg
+     );
+  }
+}
+}
+};
