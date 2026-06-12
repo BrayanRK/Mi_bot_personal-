@@ -18,6 +18,21 @@ function wrapSoloGrupo(run) {
   };
 }
 
+// Devuelve todos los .js de una carpeta de forma recursiva
+function getJsFiles(dir) {
+  const entries = readdirSync(dir);
+  const files = [];
+  for (const entry of entries) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      files.push(...getJsFiles(full)); // <-- entra a subcarpetas
+    } else if (entry.endsWith(".js") && entry !== "index.js") {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
 async function loadCommands() {
   const commands = {};
   const folders = readdirSync(__dirname).filter((f) =>
@@ -26,27 +41,20 @@ async function loadCommands() {
 
   for (const folder of folders) {
     const esGrupo = SOLO_GRUPOS.includes(folder);
+    const files = getJsFiles(join(__dirname, folder));
 
-    const files = readdirSync(join(__dirname, folder)).filter((f) =>
-      f.endsWith(".js")
-    );
-
-    for (const file of files) {
+    for (const filePath of files) {
       try {
-        const filePath = pathToFileURL(join(__dirname, folder, file)).href;
-        const mod = await import(filePath);
+        const mod = await import(pathToFileURL(filePath).href);
 
         // Cargar exports nombrados
         for (const key of Object.keys(mod)) {
           if (key === "default" || key === "antiLinkGroups") continue;
-
           const cmd = mod[key];
           if (cmd?.name && cmd?.run) {
             const run = esGrupo ? wrapSoloGrupo(cmd.run) : cmd.run;
             commands[cmd.name] = run;
-            if (cmd.aliases) {
-              cmd.aliases.forEach((a) => { commands[a] = run; });
-            }
+            cmd.aliases?.forEach((a) => { commands[a] = run; });
           }
         }
 
@@ -55,14 +63,12 @@ async function loadCommands() {
         if (cmd?.name && cmd?.run && !commands[cmd.name]) {
           const run = esGrupo ? wrapSoloGrupo(cmd.run) : cmd.run;
           commands[cmd.name] = run;
-          if (cmd.aliases) {
-            cmd.aliases.forEach((a) => {
-              if (!commands[a]) commands[a] = run;
-            });
-          }
+          cmd.aliases?.forEach((a) => {
+            if (!commands[a]) commands[a] = run;
+          });
         }
       } catch (e) {
-        console.error(`Error cargando ${folder}/${file}:`, e.message);
+        console.error(`Error cargando ${filePath}:`, e.message);
       }
     }
   }
