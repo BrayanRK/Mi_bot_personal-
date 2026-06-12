@@ -56,7 +56,7 @@ export const PERSONAJES = [
   { nombre: "Nezuko Kamado",        rarity: "SR",  image: "https://files.catbox.moe/gzn3vp.jpg" },
   { nombre: "Zenitsu Agatsuma",     rarity: "SR",  image: "https://files.catbox.moe/s9uzqo.jpg" },
   { nombre: "Inosuke Hashibira",    rarity: "SR",  image: "https://files.catbox.moe/qe8ckz.jpg" },
-  { nombre: "Muzan Kibutsuji",      rarity: "SSR", image: "https://files.catbox.moe/nmpixb.webp" },
+  { nombre: "Muzan Kibutsuji",      rarity: "SSR", image: "https://files.catbox.moe/yctsgy.jpg" },
   { nombre: "Rengoku",              rarity: "SSR", image: "https://files.catbox.moe/r4rm9s.jpg" },
   { nombre: "Gyutaro",              rarity: "SSR", image: "https://files.catbox.moe/1m8rb2.jpg" },
   { nombre: "Mitsuri Kanroji",      rarity: "SSR", image: "https://files.catbox.moe/ah76d8.jpg" },

@@ -6,7 +6,7 @@ async function loadConfig() {
   try {
     return await fs.readJson(CONFIG_PATH);
   } catch {
-    return { disabled: [] };
+    return { enabled: [] };
   }
 }
 
@@ -15,21 +15,29 @@ async function saveConfig(config) {
   await fs.writeJson(CONFIG_PATH, config, { spaces: 2 });
 }
 
-export async function isWelcomeDisabled(groupJid) {
+// Por defecto: APAGADO
+export async function isWelcomeEnabled(groupJid) {
   const config = await loadConfig();
-  return config.disabled.includes(groupJid);
+  return config.enabled.includes(groupJid);
 }
 
-export async function disableWelcome(groupJid) {
+// Activar welcome
+export async function enableWelcome(groupJid) {
   const config = await loadConfig();
-  if (!config.disabled.includes(groupJid)) {
-    config.disabled.push(groupJid);
+
+  if (!config.enabled.includes(groupJid)) {
+    config.enabled.push(groupJid);
     await saveConfig(config);
   }
 }
 
-export async function enableWelcome(groupJid) {
+// Desactivar welcome
+export async function disableWelcome(groupJid) {
   const config = await loadConfig();
-  config.disabled = config.disabled.filter((jid) => jid !== groupJid);
+
+  config.enabled = config.enabled.filter(
+    jid => jid !== groupJid
+  );
+
   await saveConfig(config);
 }
