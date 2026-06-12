@@ -5,10 +5,6 @@ export default {
   name: "headers",
   aliases: ["httpheaders", "head"],
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => {
-      try { await sock.sendMessage(msg.key.remoteJid, { react: { text: e, key: msg.key } }); } catch {}
-    };
-
     let url = args[0]?.trim();
     if (!url) {
       
@@ -58,3 +54,4 @@ export default {
     }
   },
 };
+

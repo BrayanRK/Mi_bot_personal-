@@ -5,10 +5,6 @@ export default {
   name: "ssl",
   aliases: ["cert", "certificado"],
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => {
-      try { await sock.sendMessage(msg.key.remoteJid, { react: { text: e, key: msg.key } }); } catch {}
-    };
-
     let domain = args[0]?.trim().replace(/https?:\/\//i, "").replace(/\/.*/,"").replace(/:.*/, "");
     if (!domain) {
       
@@ -56,3 +52,4 @@ export default {
     }
   },
 };
+

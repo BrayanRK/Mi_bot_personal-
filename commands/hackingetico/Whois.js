@@ -7,8 +7,6 @@ export default {
   description: "Info WHOIS de un dominio",
 
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => { try { await sock.sendMessage(jid, { react: { text: e, key: msg.key } }); } catch {} };
-
     const domain = args[0]?.trim().replace(/https?:\/\//i, "").split("/")[0];
     if (!domain) {
       
@@ -42,3 +40,4 @@ export default {
     }
   },
 };
+

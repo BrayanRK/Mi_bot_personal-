@@ -7,8 +7,6 @@ export default {
   description: "Verifica si un host está online",
 
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => { try { await sock.sendMessage(jid, { react: { text: e, key: msg.key } }); } catch {} };
-
     const host = args[0]?.trim().replace(/https?:\/\//i, "").split("/")[0];
     if (!host) {
       
@@ -68,3 +66,4 @@ export default {
     }
   },
 };
+

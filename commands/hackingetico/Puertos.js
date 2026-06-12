@@ -28,8 +28,6 @@ export default {
   description: "Info sobre un puerto de red",
 
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => { try { await sock.sendMessage(jid, { react: { text: e, key: msg.key } }); } catch {} };
-
     const num = parseInt(args[0]);
 
     // Sin argumento → mostrar lista
@@ -71,3 +69,4 @@ export default {
     );
   },
 };
+

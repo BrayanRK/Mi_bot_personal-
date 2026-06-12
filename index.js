@@ -383,18 +383,15 @@ async function startBot() {
           );
           continue;
         }
-
-        // ─── IA por mención o respuesta al bot en grupos ───────────────────
+           // ─── IA por mención en grupos ──────────────────────────────────────
         if (isGroup && body && !body.startsWith(CONFIG.prefix)) {
-          const menciones         = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-          const contextInfo       = msg.message?.extendedTextMessage?.contextInfo;
-          const participantQuoted = contextInfo?.participant || "";
-          const botNum            = sock.user?.id?.split(":")[0];
+          const menciones = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+          const botNum    = sock.user?.id?.split(":")[0];
 
           let activarIA = false;
 
           try {
-            const metadata = await getGroupMetadataCached(jid);
+            const metadata      = await getGroupMetadataCached(jid);
             const botParticipant = metadata.participants.find(p => {
               const pid = p.id.split("@")[0].split(":")[0];
               const ppn = (p.phoneNumber || "").replace(/\D/g, "");
@@ -402,18 +399,12 @@ async function startBot() {
             });
             const botLid = botParticipant?.id || "";
 
-            const esMencionado = botLid
+            activarIA = botLid
               ? menciones.some(m => m === botLid || m.includes(botNum))
               : menciones.some(m => m.includes(botNum));
 
-            const esRespuesta = participantQuoted &&
-              (participantQuoted.includes(botNum) || participantQuoted === botLid);
-
-            activarIA = esMencionado || esRespuesta;
           } catch (e) {
-            const esMencionado = menciones.some(m => m.includes(botNum));
-            const esRespuesta  = participantQuoted.includes(botNum);
-            activarIA = esMencionado || esRespuesta;
+            activarIA = menciones.some(m => m.includes(botNum));
             console.error("[IA GRUPO ERROR]", e.message);
           }
 
@@ -424,7 +415,48 @@ async function startBot() {
               continue;
             }
           }
-        }
+        }    
+        // // ─── IA por mención o respuesta al bot en grupos ───────────────────
+        // if (isGroup && body && !body.startsWith(CONFIG.prefix)) {
+        //   const menciones         = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+        //   const contextInfo       = msg.message?.extendedTextMessage?.contextInfo;
+        //   const participantQuoted = contextInfo?.participant || "";
+        //   const botNum            = sock.user?.id?.split(":")[0];
+
+        //   let activarIA = false;
+
+        //   try {
+        //     const metadata = await getGroupMetadataCached(jid);
+        //     const botParticipant = metadata.participants.find(p => {
+        //       const pid = p.id.split("@")[0].split(":")[0];
+        //       const ppn = (p.phoneNumber || "").replace(/\D/g, "");
+        //       return pid === botNum || ppn === botNum;
+        //     });
+        //     const botLid = botParticipant?.id || "";
+
+        //     const esMencionado = botLid
+        //       ? menciones.some(m => m === botLid || m.includes(botNum))
+        //       : menciones.some(m => m.includes(botNum));
+
+        //     const esRespuesta = participantQuoted &&
+        //       (participantQuoted.includes(botNum) || participantQuoted === botLid);
+
+        //     activarIA = esMencionado || esRespuesta;
+        //   } catch (e) {
+        //     const esMencionado = menciones.some(m => m.includes(botNum));
+        //     const esRespuesta  = participantQuoted.includes(botNum);
+        //     activarIA = esMencionado || esRespuesta;
+        //     console.error("[IA GRUPO ERROR]", e.message);
+        //   }
+
+        //   if (activarIA) {
+        //     const textoLimpio = body.replace(/@\d+/g, "").trim();
+        //     if (textoLimpio) {
+        //       await iaCmd.run(sock, msg, textoLimpio.split(" "), jid, false, false);
+        //       continue;
+        //     }
+        //   }
+        // }
 
         // ─── Mensajes sin prefix (sesiones activas de juegos) ─────────────
         if (!body.startsWith(CONFIG.prefix)) {

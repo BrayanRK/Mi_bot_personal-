@@ -89,3 +89,4 @@ export default {
     await sock.sendMessage(jid, { text: TOOLS_LIST }, { quoted: msg });
   },
 };
+

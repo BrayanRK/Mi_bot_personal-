@@ -5,10 +5,6 @@ export default {
   name: "geoip",
   aliases: ["ipinfo", "iplookup", "ipdatos"],
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => {
-      try { await sock.sendMessage(msg.key.remoteJid, { react: { text: e, key: msg.key } }); } catch {}
-    };
-
     let target = args[0]?.trim();
     if (!target) {
       
@@ -60,3 +56,4 @@ export default {
     }
   },
 };
+

@@ -6,8 +6,6 @@ export default {
   description: "Codifica o decodifica base64",
 
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => { try { await sock.sendMessage(jid, { react: { text: e, key: msg.key } }); } catch {} };
-
     const modo  = args[0]?.toLowerCase();
     const texto = args.slice(1).join(" ").trim();
 
@@ -42,3 +40,4 @@ export default {
     }
   },
 };
+

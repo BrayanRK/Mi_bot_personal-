@@ -7,8 +7,6 @@ export default {
   description: "Info de una dirección IP",
 
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => { try { await sock.sendMessage(jid, { react: { text: e, key: msg.key } }); } catch {} };
-
     const ip = args[0]?.trim();
     if (!ip) {
       
@@ -44,3 +42,4 @@ export default {
     }
   },
 };
+

@@ -7,8 +7,6 @@ export default {
   description: "Genera hash de un texto",
 
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => { try { await sock.sendMessage(jid, { react: { text: e, key: msg.key } }); } catch {} };
-
     const texto = args.join(" ").trim();
     if (!texto) {
       
@@ -34,3 +32,4 @@ export default {
     return reply(sock, jid, txt, msg);
   },
 };
+

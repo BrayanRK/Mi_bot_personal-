@@ -5,10 +5,6 @@ export default {
   name: "subdominios",
   aliases: ["subdomains", "subd"],
   run: async (sock, msg, args, jid) => {
-    const react = async (e) => {
-      try { await sock.sendMessage(msg.key.remoteJid, { react: { text: e, key: msg.key } }); } catch {}
-    };
-
     const domain = args[0]?.trim().replace(/https?:\/\//i, "").replace(/\/.*/,"");
     if (!domain) {
       
@@ -55,3 +51,4 @@ export default {
     }
   },
 };
+
