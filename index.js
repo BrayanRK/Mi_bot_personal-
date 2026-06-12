@@ -5,7 +5,6 @@ import {
   fetchLatestBaileysVersion,
   Browsers,
 } from "fsociety-Baileys";
-import pino from "pino";
 import fs from "fs-extra";
 import readline from "readline";
 import { CONFIG, TEMP_DIR } from "./config.js";
@@ -25,23 +24,12 @@ import iaCmd from "./commands/ia/ia.js";
 import { estado } from "./commands/owner/mantenimiento.js";
 import { getSesionJuego } from "./commands/juegos/numjuego.js";
 import { loadDB, saveDB, getUser, saveNombre, numId } from "./commands/economia/db.js";
-
+import { logMensaje, logComando, logConectado } from "./logger.js";
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const MSG_STORE_LIMIT      = 1000;
-const OWNER                = "573223090406@s.whatsapp.net";
 const SESSION_FILE         = "./session_phone.json";
 const MAX_RETRIES          = 5;
 const BASE_RECONNECT_DELAY = 3000;
-
-// Comandos que manejan sus propias reacciones
-const SELF_REACT_CMDS = new Set([
-  "tt", "tiktok", "ttsearch",
-  "fb", "facebook", "fbmp4",
-  "ytmp3", "play", "mp3", "song",
-  "ytmp4", "video", "yt",
-  "spotify", "sp", "spdl",
-  "applemusic", "amusic", "apple", "am",
-]);
 
 // ─── Logger completamente silencioso ─────────────────────────────────────────
 function crearLoggerSilencioso() {
@@ -63,6 +51,26 @@ let eventosRegistrados = false;
 let commands           = {};
 
 const mensajesProcesados = new Set();
+
+// ─── Cache de metadata de grupos (evita rate-overlimit de WhatsApp) ──────────
+const GROUP_META_TTL = 5 * 60 * 1000; // 5 minutos
+const groupMetaCache = new Map();
+
+async function getGroupMetadataCached(jid) {
+  const cached = groupMetaCache.get(jid);
+  if (cached && Date.now() - cached.time < GROUP_META_TTL) {
+    return cached.data;
+  }
+  try {
+    const data = await sock.groupMetadata(jid);
+    groupMetaCache.set(jid, { data, time: Date.now() });
+    return data;
+  } catch (e) {
+    // Si falla y hay cache vencido, usar el viejo como fallback
+    if (cached) return cached.data;
+    throw e;
+  }
+}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 await fs.ensureDir(TEMP_DIR);
@@ -226,6 +234,9 @@ async function startBot() {
     iniciarCronBuenasNoches(sock);
   }
 
+  // Limpiar cache de grupos al reconectar (puede estar desactualizado)
+  groupMetaCache.clear();
+
   // ── Conexión ──────────────────────────────────────────────────────────────
   sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
     if (qr) console.log("⚠️  Se generó QR inesperado. Usa el código de vinculación.");
@@ -233,7 +244,7 @@ async function startBot() {
     if (connection === "open") {
       sessionRetries = 0;
       reconnectTimer = null;
-      console.log(`\n✅ ${CONFIG.botName} conectado!`);
+      logConectado(CONFIG.botName);
       return;
     }
 
@@ -309,18 +320,17 @@ async function startBot() {
         }
 
         let sender = getSender(msg);
+        const isGroup = jid.endsWith("@g.us");
 
-        // Resolver sender @lid → número real
+        // Resolver sender @lid → número real (usa cache)
         if (sender?.endsWith("@lid")) {
-          const isGrp = (msg.key.remoteJid || "").endsWith("@g.us");
-
           if (msg.key?.participantPn) {
             sender = msg.key.participantPn.includes("@")
               ? msg.key.participantPn
               : `${msg.key.participantPn.replace(/\D/g, "")}@s.whatsapp.net`;
-          } else if (isGrp) {
+          } else if (isGroup) {
             try {
-              const meta  = await sock.groupMetadata(msg.key.remoteJid);
+              const meta  = await getGroupMetadataCached(jid);
               const found = meta.participants.find(p => p.id === sender);
               if (found?.jid) {
                 sender = found.jid.includes("@") ? found.jid : `${found.jid}@s.whatsapp.net`;
@@ -344,14 +354,13 @@ async function startBot() {
         // Ignorar mensajes propios que no sean comandos
         if (msg.key.fromMe && !tempBody.startsWith(CONFIG.prefix)) continue;
 
-        const isGroup             = jid.endsWith("@g.us");
         const { tipo, detalle, body } = getMsgInfo(msg);
 
-        console.log("=".repeat(70));
-        console.log(`📩 DE: ${sender} | 📱 CHAT: ${jid}`);
-        console.log(`🆔 ID: ${stanzaId}`);
-        console.log(`📦 TIPO: ${tipo} | 📝 ${detalle}`);
-        console.log("=".repeat(70));
+        let groupName = null;
+        if (isGroup) {
+          try { groupName = (await getGroupMetadataCached(jid)).subject; } catch {}
+        }
+        logMensaje({ sender, jid, pushName: msg.pushName, tipo, detalle, isGroup, groupName });
 
         if (!body && !msg.message?.documentMessage) continue;
 
@@ -385,7 +394,7 @@ async function startBot() {
           let activarIA = false;
 
           try {
-            const metadata = await sock.groupMetadata(jid);
+            const metadata = await getGroupMetadataCached(jid);
             const botParticipant = metadata.participants.find(p => {
               const pid = p.id.split("@")[0].split(":")[0];
               const ppn = (p.phoneNumber || "").replace(/\D/g, "");
@@ -437,21 +446,19 @@ async function startBot() {
         const cmd = rawCmd.toLowerCase();
         if (!commands[cmd]) continue;
 
-        console.log(`[CMD] Ejecutando: ${cmd} | args: ${args.join(" ")}`);
+        logComando(cmd, args);
 
         try {
-          //if (!SELF_REACT_CMDS.has(cmd)) await react(sock, msg, "⏳");
-
-          // Guardar nombre en economía
+          // Guardar nombre en economía (usa cache de grupo)
           try {
             const _ecoDb     = loadDB();
             const _rawSender = msg?.key?.participant || msg?.key?.remoteJid || sender || "";
             let   _ecoId;
 
             if (_rawSender.endsWith("@lid")) {
-              if (jid.endsWith("@g.us")) {
+              if (isGroup) {
                 try {
-                  const meta  = await sock.groupMetadata(jid);
+                  const meta  = await getGroupMetadataCached(jid);
                   const found = meta.participants.find(p => p.id === _rawSender);
                   if (found?.phoneNumber) {
                     _ecoId = found.phoneNumber.replace(/\D/g, "");
@@ -471,8 +478,6 @@ async function startBot() {
           } catch {}
 
           await commands[cmd](sock, msg, args, jid, isOwner, isGroup, sender);
-
-          //if (!SELF_REACT_CMDS.has(cmd)) await react(sock, msg, "✅");
 
         } catch (e) {
           console.error(`❌ Error en comando "${cmd}":`, e);

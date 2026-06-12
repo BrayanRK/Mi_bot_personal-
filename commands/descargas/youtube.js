@@ -1,18 +1,30 @@
 import fs from "fs";
 import path from "path";
 import axios from "axios";
+import yts from "yt-search";
 import { pipeline } from "stream/promises";
 import { spawn } from "child_process";
+import { reply } from "../../utils.js";
 import { TEMP_DIR } from "../../config.js";
 
-const API_BASE = process.env.DV_API_URL;
-const APIKEY   = process.env.DV_API_KEY;
-const REQUEST_TIMEOUT = 120000;
-const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
-const AUDIO_QUALITY = "128k";
+const DV_API_URL = process.env.DV_API_URL;
+const DV_API_KEY = process.env.DV_API_KEY;
+const RYZE_API   = "https://ryzecodes.xyz/api/scrapers/36/run";
+const RYZE_KEY   = "ryzk0cdn";
 
+const VIDEO_QUALITY             = "720p";
+const REQUEST_TIMEOUT           = 120000;
+const MAX_VIDEO_BYTES           = 1500 * 1024 * 1024;
+const VIDEO_AS_DOCUMENT_THRESHOLD = 70 * 1024 * 1024;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function safeFileName(name) {
-  return String(name || "audio").replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 80) || "audio";
+  return String(name || "video").replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 80) || "video";
+}
+
+function normalizeMp4Name(name) {
+  const clean = safeFileName(String(name || "video").replace(/\.mp4$/i, ""));
+  return `${clean || "video"}.mp4`;
 }
 
 function deleteFileSafe(fp) {
@@ -24,246 +36,259 @@ function extractYouTubeUrl(text) {
   return m ? m[0].trim() : "";
 }
 
+function getVideoId(text) {
+  const m = String(text || "").match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/|v\/))([a-zA-Z0-9_-]{11})/);
+  return m?.[1] || null;
+}
+
 function isHttpUrl(v) { return /^https?:\/\//i.test(String(v || "")); }
 
-function detectAudioType(fp) {
+async function readStreamToText(stream) {
+  return new Promise((res, rej) => {
+    let d = "";
+    stream.on("data", (c) => (d += c.toString()));
+    stream.on("end", () => res(d));
+    stream.on("error", rej);
+  });
+}
+
+async function normalizeForWhatsApp(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    const ff = spawn("ffmpeg", [
+      "-y", "-i", inputPath,
+      "-vf", "scale=640:trunc(ow/a/2)*2",
+      "-c:v", "libx264", "-b:v", "800k", "-preset", "fast",
+      "-c:a", "aac", "-b:a", "128k",
+      "-movflags", "+faststart", "-loglevel", "error", outputPath,
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+    ff.on("error", reject);
+    ff.on("close", (code) => code === 0 ? resolve(true) : reject(new Error("ffmpeg error")));
+  });
+}
+
+// ─── Búsqueda de info ─────────────────────────────────────────────────────────
+async function searchYouTubeInfo(query, videoId) {
   try {
-    const fd = fs.openSync(fp, "r");
-    const buf = Buffer.alloc(16);
-    const n = fs.readSync(fd, buf, 0, 16, 0);
-    fs.closeSync(fd);
-    const s = buf.subarray(0, n);
-    if (s.length >= 8 && s.subarray(4, 8).toString("ascii") === "ftyp") return { ext: "m4a", mime: "audio/mp4", isMp3: false };
-    if (s.length >= 3 && s.subarray(0, 3).toString("ascii") === "ID3") return { ext: "mp3", mime: "audio/mpeg", isMp3: true };
-    if (s.length >= 2 && s[0] === 0xff && (s[1] & 0xe0) === 0xe0) return { ext: "mp3", mime: "audio/mpeg", isMp3: true };
-    if (s.length >= 4 && s[0] === 0x1a && s[1] === 0x45) return { ext: "webm", mime: "audio/webm", isMp3: false };
+    if (videoId) {
+      const info = await yts({ videoId });
+      if (info?.videoId) return { url: `https://youtu.be/${info.videoId}`, title: info.title, thumbnail: info.thumbnail || info.image, author: info.author?.name, duration: info.timestamp };
+    }
+    const search = await yts(query);
+    const v = search.videos?.[0];
+    if (v) return { url: v.url || `https://youtu.be/${v.videoId}`, title: v.title, thumbnail: v.thumbnail || v.image, author: v.author?.name, duration: v.timestamp };
   } catch {}
+
+  try {
+    const { data: html } = await axios.get(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+      timeout: 15000,
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36", "Accept-Language": "es-ES,es;q=0.9" },
+    });
+    const match = html.match(/var ytInitialData = ({.+?});<\/script>/s);
+    if (match) {
+      const ytData = JSON.parse(match[1]);
+      const contents = ytData?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents || [];
+      for (const item of contents) {
+        const v = item?.videoRenderer;
+        if (!v?.videoId) continue;
+        return {
+          url: `https://www.youtube.com/watch?v=${v.videoId}`,
+          title: v.title?.runs?.[0]?.text || "video",
+          thumbnail: `https://i.ytimg.com/vi/${v.videoId}/sddefault.jpg`,
+          author: v.ownerText?.runs?.[0]?.text || "Desconocido",
+          duration: v.lengthText?.simpleText || "?",
+        };
+      }
+    }
+  } catch {}
+
   return null;
 }
 
-function parseContentDisposition(h) {
-  const t = String(h || "");
-  const u = t.match(/filename\*=UTF-8''([^;]+)/i);
-  if (u?.[1]) { try { return decodeURIComponent(u[1]).replace(/["']/g, "").trim(); } catch {} }
-  const n = t.match(/filename="?([^"]+)"?/i);
-  return n?.[1]?.trim() || "";
-}
-
-async function searchYouTube(query) {
-  console.log("[YTSEARCH] Buscando:", query);
-  const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-  const { data: html } = await axios.get(searchUrl, {
-    timeout: 15000,
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-      "Accept-Language": "es-ES,es;q=0.9",
-    },
+// ─── API 1: DV API ────────────────────────────────────────────────────────────
+async function getVideoDV(videoUrl) {
+  if (!DV_API_URL) throw new Error("DV_API_URL no configurada");
+  const res = await axios.get(`${DV_API_URL}/ytmp4`, {
+    params: { url: videoUrl, quality: VIDEO_QUALITY, apikey: DV_API_KEY },
+    timeout: 60000, validateStatus: () => true,
+    headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json", "x-api-key": DV_API_KEY },
   });
-
-  const match = html.match(/var ytInitialData = ({.+?});<\/script>/s);
-  if (!match) throw new Error("No se pudo obtener resultados de YouTube.");
-
-  const ytData = JSON.parse(match[1]);
-  const contents =
-    ytData?.contents?.twoColumnSearchResultsRenderer?.primaryContents
-      ?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents || [];
-
-  for (const item of contents) {
-    const video = item?.videoRenderer;
-    if (!video?.videoId) continue;
-    const videoId = video.videoId;
-    const title = video.title?.runs?.[0]?.text || "audio";
-    const thumbnail = `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`;
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    console.log("[YTSEARCH] Encontrado:", title, videoUrl);
-    return { videoUrl, title: safeFileName(title), thumbnail };
-  }
-
-  throw new Error("No se encontraron videos para esa búsqueda.");
-}
-
-async function getAudioLink(videoUrl) {
-  console.log("[YTMP3] Obteniendo link para:", videoUrl);
-  const res = await axios.get(`${API_BASE}/ytmp3`, {
-    params: { url: videoUrl, quality: AUDIO_QUALITY, apikey: APIKEY },
-    timeout: 60000,
-    validateStatus: () => true,
-    headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json", "x-api-key": APIKEY },
-  });
-
-  console.log("[YTMP3] Status:", res.status);
   const d = res.data;
   if (res.status >= 400 || d?.ok === false) throw new Error(d?.detail || d?.message || `HTTP ${res.status}`);
-
   const dlUrl = d?.download_url_full || d?.stream_url_full || d?.download_url || d?.stream_url || d?.url || "";
-  if (!dlUrl) throw new Error("La API no devolvió link de descarga.");
-
-  return {
-    dlUrl: dlUrl.startsWith("/") ? `${API_BASE}${dlUrl}` : dlUrl,
-    title: safeFileName(d?.title || "audio"),
-    fileName: d?.filename || "audio.mp3",
-    thumbnail: d?.thumbnail || null,
-  };
+  if (!dlUrl) throw new Error("DV API no devolvió link");
+  return dlUrl.startsWith("/") ? `${DV_API_URL}${dlUrl}` : dlUrl;
 }
 
-async function downloadAudio(downloadUrl, outputPath) {
-  const response = await axios.get(downloadUrl, {
-    responseType: "stream",
-    timeout: REQUEST_TIMEOUT,
-    headers: { "User-Agent": "Mozilla/5.0", Accept: "*/*", "x-api-key": APIKEY },
-    validateStatus: () => true,
-    maxRedirects: 10,
+// ─── API 2: Ryze ──────────────────────────────────────────────────────────────
+async function getVideoRyze(videoUrl) {
+  const res = await axios.post(RYZE_API, {
+    input: { url: videoUrl, format: "480p", attempts: 6, interval_ms: 1100 }
+  }, {
+    headers: { "Content-Type": "application/json", "X-API-Key": RYZE_KEY },
+    timeout: 120000,
   });
-
-  if (response.status >= 400) throw new Error(`Error al descargar: HTTP ${response.status}`);
-
-  let downloaded = 0;
-  response.data.on("data", (chunk) => {
-    downloaded += chunk.length;
-    if (downloaded > MAX_AUDIO_BYTES) response.data.destroy(new Error("Audio demasiado grande."));
-  });
-
-  try {
-    await pipeline(response.data, fs.createWriteStream(outputPath));
-  } catch (e) {
-    deleteFileSafe(outputPath);
-    throw e;
-  }
-
-  if (!fs.existsSync(outputPath)) throw new Error("No se pudo guardar el audio.");
-  const size = fs.statSync(outputPath).size;
-  if (!size || size < 10000) { deleteFileSafe(outputPath); throw new Error("Audio inválido o vacío."); }
-
-  const detectedName = parseContentDisposition(response.headers?.["content-disposition"]);
-  const sniffed = detectAudioType(outputPath);
-  const ext = sniffed?.ext || "mp3";
-  const base = safeFileName(path.parse(detectedName || "audio").name || "audio");
-
-  return { size, fileName: `${base}.${ext}`, mime: sniffed?.mime || "audio/mpeg", isMp3: sniffed?.isMp3 ?? true };
+  const result = res.data?.result;
+  if (!res.data?.success || !result?.success) throw new Error(res.data?.error || result?.error || "Ryze sin resultado");
+  const videoUrl2 = result.file_url || result.download_urls?.[0] || null;
+  if (!videoUrl2) throw new Error("Ryze no devolvió link");
+  return videoUrl2;
 }
 
-async function convertToMp3(inputPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    const ff = spawn("ffmpeg", [
-      "-y", "-i", inputPath, "-vn", "-c:a", "libmp3lame",
-      "-b:a", AUDIO_QUALITY, "-ar", "44100", "-ac", "2",
-      "-map_metadata", "-1", "-loglevel", "error", outputPath,
-    ], { stdio: ["ignore", "ignore", "pipe"] });
+// ─── Descarga con fallback ────────────────────────────────────────────────────
+async function downloadVideoWithFallback(videoUrl, outputPath) {
+  const apis = [
+    { name: "DV API", fn: () => getVideoDV(videoUrl)   },
+    { name: "Ryze",   fn: () => getVideoRyze(videoUrl) },
+  ];
 
-    let errText = "";
-    ff.stderr.on("data", (c) => (errText += c.toString()));
-    ff.on("error", (e) => reject(e?.code === "ENOENT" ? new Error("ffmpeg no instalado.") : e));
-    ff.on("close", (code) => code === 0 ? resolve() : reject(new Error(errText.trim() || `ffmpeg error ${code}`)));
-  });
-}
+  let lastError = null;
 
-export default {
-  name: "ytmp3c",
-  aliases: ["playc", "mp3c", "songc"],
-  run: async (sock, msg, args, jid) => {
-    const { reply } = await import("../../utils.js");
-    const quoted = { quoted: msg };
-    const input = args.join(" ").trim();
-
-    // ⏳ Reacción de carga
-    
-
-    if (!input) {
-      
-      return reply(sock, jid, "❌ *Uso:*\n.play <nombre de canción>\n.play <link de YouTube>", msg);
-    }
-
-    const sourceFile = path.join(TEMP_DIR, `yt_src_${Date.now()}.bin`);
-    const mp3File    = path.join(TEMP_DIR, `yt_mp3_${Date.now()}.mp3`);
-
+  for (const api of apis) {
     try {
-      let videoUrl  = extractYouTubeUrl(input);
-      let title     = "audio";
-      let thumbnail = null;
+      console.log(`[VIDEO] Intentando con ${api.name}...`);
+      const dlUrl = await api.fn();
 
-      if (!videoUrl) {
-        if (isHttpUrl(input)) {
-          
-          return reply(sock, jid, "❌ Envía un link válido de YouTube.", msg);
-        }
+      const response = await axios.get(dlUrl, {
+        responseType: "stream", timeout: REQUEST_TIMEOUT,
+        headers: { "User-Agent": "Mozilla/5.0", Accept: "*/*", ...(DV_API_KEY ? { "x-api-key": DV_API_KEY } : {}) },
+        validateStatus: () => true, maxRedirects: 10,
+      });
 
-        await reply(sock, jid, `🔍 Buscando: *${input}*...`, msg);
-        const search = await searchYouTube(input);
-        videoUrl  = search.videoUrl;
-        title     = search.title;
-        thumbnail = search.thumbnail;
+      if (response.status >= 400) {
+        const errText = await readStreamToText(response.data).catch(() => "");
+        throw new Error(errText || `HTTP ${response.status}`);
       }
 
-      if (thumbnail) {
-        await sock.sendMessage(jid, {
-          image: { url: thumbnail },
-          caption: `🎵 *Descargando audio...*\n🎧 ${title}\n🎚️ Calidad: ${AUDIO_QUALITY}\n⏳ Espera un momento...`,
-        }, quoted);
-      } else {
-        await reply(sock, jid, `🎵 *Descargando:* ${title}\n⏳ Espera...`, msg);
-      }
+      let downloaded = 0;
+      response.data.on("data", (chunk) => {
+        downloaded += chunk.length;
+        if (downloaded > MAX_VIDEO_BYTES) response.data.destroy(new Error("Video demasiado grande"));
+      });
 
-      const link = await getAudioLink(videoUrl);
-      title = link.title || title;
+      await pipeline(response.data, fs.createWriteStream(outputPath));
 
-      const audioInfo = await downloadAudio(link.dlUrl, sourceFile);
-      let fileToSend     = sourceFile;
-      let fileNameToSend = audioInfo.fileName || `${safeFileName(title)}.mp3`;
-      let mimeToSend     = audioInfo.mime;
+      if (!fs.existsSync(outputPath)) throw new Error("No se guardó el archivo");
+      const size = fs.statSync(outputPath).size;
+      if (!size || size < 150000) { deleteFileSafe(outputPath); throw new Error("Video inválido"); }
+      if (size > MAX_VIDEO_BYTES)  { deleteFileSafe(outputPath); throw new Error("Video demasiado grande"); }
 
-      if (!audioInfo.isMp3) {
-        try {
-          await convertToMp3(sourceFile, mp3File);
-          fileToSend     = mp3File;
-          fileNameToSend = `${safeFileName(title)}.mp3`;
-          mimeToSend     = "audio/mpeg";
-        } catch (convErr) {
-          console.error("[YTMP3 CONV ERROR]", convErr.message);
-          await sock.sendMessage(jid, {
-            document: { url: fileToSend },
-            mimetype: mimeToSend,
-            fileName: fileNameToSend,
-            caption: `🎵 ${title}`,
-          }, quoted);
-          
-          return;
-        }
-      }
-
-      try {
-        await sock.sendMessage(jid, {
-          audio: { url: fileToSend },
-          mimetype: "audio/mpeg",
-          ptt: false,
-          fileName: fileNameToSend,
-        }, quoted);
-      } catch {
-        await sock.sendMessage(jid, {
-          document: { url: fileToSend },
-          mimetype: mimeToSend,
-          fileName: fileNameToSend,
-          caption: `🎵 ${title}`,
-        }, quoted);
-      }
-
-      // ✅ Reacción de éxito
-      
+      console.log(`[VIDEO] ✅ Descargado con ${api.name}`);
+      return { size, api: api.name };
 
     } catch (e) {
-      console.error("[YTMP3 ERROR]", e.message);
-      // ❌ Reacción de error
-      
+      console.error(`[VIDEO] ❌ ${api.name} falló:`, e.message);
+      deleteFileSafe(outputPath);
+      lastError = e;
+    }
+  }
 
-      const rawMsg = String(e?.message || "").toLowerCase();
-      let humanMsg = `❌ ${e.message || "Error al descargar el audio."}`;
-      if (rawMsg.includes("bad gateway") || rawMsg.includes("502") || rawMsg.includes("503")) {
-        humanMsg = "⚠️ El servidor de descargas está saturado.\n🔁 Intenta más tarde.";
+  throw new Error(`Todas las APIs fallaron. Último error: ${lastError?.message}`);
+}
+
+// ─── Comando ──────────────────────────────────────────────────────────────────
+export default {
+  name: "ytmp4",
+  aliases: ["video", "yt", "ytmp4b", "videob", "ytb", "ytmp4c", "videoc", "ytc"],
+
+  run: async (sock, msg, args, jid) => {
+    const input = args.join(" ").trim();
+    if (!input) return reply(sock, jid, "❌ *Uso:* .video <título o link de YouTube>", msg);
+
+    const videoId = getVideoId(input);
+    const query   = videoId ? `https://youtu.be/${videoId}` : input;
+
+    const rawFile   = path.join(TEMP_DIR, `video_raw_${Date.now()}.mp4`);
+    const finalFile = path.join(TEMP_DIR, `video_final_${Date.now()}.mp4`);
+
+    try {
+      // 1. Buscar info
+      let videoUrl  = extractYouTubeUrl(input) || (isHttpUrl(input) ? input : "");
+      let title     = "video";
+      let thumbnail = null;
+      let author    = "Desconocido";
+      let duration  = "?";
+
+      const info = await searchYouTubeInfo(query, videoId);
+      if (info) {
+        videoUrl  = info.url || videoUrl;
+        title     = info.title || title;
+        thumbnail = info.thumbnail || null;
+        author    = info.author || author;
+        duration  = info.duration || duration;
       }
-      await reply(sock, jid, humanMsg, msg);
+
+      if (!videoUrl) return reply(sock, jid, "❌ No se encontró el video.", msg);
+
+      // 2. Mostrar info mientras descarga
+      const caption = `🎬 *${title}*\n👤 ${author}\n⏱️ ${duration}\n🎚️ Calidad: ${VIDEO_QUALITY}\n\n⏳ Descargando...`;
+      if (thumbnail) {
+        await sock.sendMessage(jid, { image: { url: thumbnail }, caption }, { quoted: msg });
+      } else {
+        await reply(sock, jid, caption, msg);
+      }
+
+      // 3. Descargar con fallback
+      const { size } = await downloadVideoWithFallback(videoUrl, rawFile);
+      const finalName = normalizeMp4Name(safeFileName(title));
+
+      // 4. Enviar como documento si es muy grande
+      if (size > VIDEO_AS_DOCUMENT_THRESHOLD) {
+        await sock.sendMessage(jid, {
+          document: { url: rawFile },
+          mimetype: "video/mp4",
+          fileName: finalName,
+          caption: `🎬 ${title}\n🎚️ ${VIDEO_QUALITY}\n📦 Archivo grande — enviado como documento`,
+        }, { quoted: msg });
+        return;
+      }
+
+      // 5. Intentar enviar como video
+      try {
+        await sock.sendMessage(jid, {
+          video: { url: rawFile },
+          mimetype: "video/mp4",
+          fileName: finalName,
+          caption: `🎬 ${title}\n🎚️ ${VIDEO_QUALITY}`,
+        }, { quoted: msg });
+      } catch {
+        // Fallback: normalizar con ffmpeg
+        try {
+          await normalizeForWhatsApp(rawFile, finalFile);
+          const filePath = fs.existsSync(finalFile) ? finalFile : rawFile;
+          const fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : size;
+
+          if (fileSize > VIDEO_AS_DOCUMENT_THRESHOLD) {
+            await sock.sendMessage(jid, {
+              document: { url: filePath }, mimetype: "video/mp4",
+              fileName: finalName, caption: `🎬 ${title}\n📦 Documento`,
+            }, { quoted: msg });
+          } else {
+            await sock.sendMessage(jid, {
+              video: { url: filePath }, mimetype: "video/mp4",
+              fileName: finalName, caption: `🎬 ${title}\n🎚️ ${VIDEO_QUALITY}`,
+            }, { quoted: msg });
+          }
+        } catch {
+          await sock.sendMessage(jid, {
+            document: { url: rawFile }, mimetype: "video/mp4",
+            fileName: finalName, caption: `🎬 ${title}`,
+          }, { quoted: msg });
+        }
+      }
+
+    } catch (e) {
+      console.error("[VIDEO ERROR]", e.message);
+      const raw = e.message.toLowerCase();
+      let msg2 = `❌ ${e.message}`;
+      if (raw.includes("502") || raw.includes("503") || raw.includes("bad gateway")) {
+        msg2 = "⚠️ Los servidores de descarga están saturados.\n🔁 Intenta más tarde.";
+      } else if (raw.includes("404")) {
+        msg2 = "❌ No se pudo descargar ese video.\n💡 Intenta con otro link o búsqueda.";
+      }
+      await reply(sock, jid, msg2, msg);
     } finally {
-      deleteFileSafe(sourceFile);
-      deleteFileSafe(mp3File);
+      deleteFileSafe(rawFile);
+      deleteFileSafe(finalFile);
     }
   },
 };
-

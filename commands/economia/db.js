@@ -6,15 +6,16 @@ const DB_PATH = path.resolve("./data/economia.json");
 export function loadDB() {
   if (!fs.existsSync(DB_PATH)) {
     fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-    fs.writeFileSync(DB_PATH, JSON.stringify({ usuarios: {}, loteria: { pozo: 0, participantes: [] } }, null, 2));
+    fs.writeFileSync(DB_PATH, JSON.stringify({ usuarios: {}, loteria: { pozo: 0, participantes: [] }, mercadoGacha: [] }, null, 2));
   }
   try {
     const db = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
     if (!db.usuarios) db.usuarios = {};
     if (!db.loteria)  db.loteria  = { pozo: 0, participantes: [] };
+    if (!db.mercadoGacha) db.mercadoGacha = [];
     return db;
   } catch {
-    return { usuarios: {}, loteria: { pozo: 0, participantes: [] } };
+    return { usuarios: {}, loteria: { pozo: 0, participantes: [] }, mercadoGacha: [] };
   }
 }
 
@@ -32,7 +33,11 @@ const DEFAULTS = {
   lastInteres: 0,
   inventario: [],
   estadisticas: { trabajos: 0, robos: 0, pesca: 0, mineria: 0 },
-  misiones: { ultima: 0 }
+  misiones: { ultima: 0 },
+
+  // Gacha
+  gacha: [],      // [{ nombre, rarity, cantidad }]
+  lastGacha: 0,   // timestamp último claim gratuito
 };
 
 export function getUser(db, id) {
@@ -88,6 +93,10 @@ export function getUser(db, id) {
     }
     user.negocios = [...map.values()];
   }
+
+  // MIGRACIÓN: gacha
+  if (!Array.isArray(user.gacha))   user.gacha    = [];
+  if (user.lastGacha === undefined) user.lastGacha = 0;
 
   for (const [k, v] of Object.entries(DEFAULTS)) {
     if (user[k] === undefined) user[k] = structuredClone(v);
@@ -156,6 +165,11 @@ export const TIENDA = [
   { id: "cajarara",       nombre: "🎁 Caja Rara",                precio: 75000,    desc: "Mejores premios" },
   { id: "cajalegendaria", nombre: "💎 Caja Legendaria",          precio: 250000,   desc: "Premios épicos" },
   { id: "cajamistica",    nombre: "🌌 Caja Mística",             precio: 2000000,  desc: "Premios exclusivos — alto riesgo, alta recompensa" },
+
+  // ── Cofres Gacha ──────────────────────────────────────────
+  { id: "cofregacha_comun",      nombre: "📦 Cofre Gacha Común",      precio: 5000,     desc: "Invoca un personaje R o SR del gacha" },
+  { id: "cofregacha_raro",       nombre: "🎁 Cofre Gacha Raro",       precio: 20000,    desc: "SR garantizado (10% SSR)" },
+  { id: "cofregacha_legendario", nombre: "💎 Cofre Gacha Legendario", precio: 80000,    desc: "SSR garantizado del gacha" },
 ];
 
 export const MASCOTAS_IDS = ["perro", "gato", "zorro", "dragon", "fenix", "unicornio"];
