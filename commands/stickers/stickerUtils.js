@@ -86,7 +86,18 @@ export async function crearStickerImagen(buffer, { pack, author, categories } = 
 
     // Convertir a WebP con ffmpeg
     const cmd = `ffmpeg -y -i "${pngPath}" -vcodec libwebp -lossless 0 -qscale 75 -preset picture -an -vsync 0 "${webpPath}"`;
-    await execAsync(cmd);
+    try {
+      const { stdout, stderr } = await execAsync(cmd);
+      console.log("[STICKER FFMPEG STDOUT]", stdout);
+      console.log("[STICKER FFMPEG STDERR]", stderr);
+    } catch (ffErr) {
+      console.error("[STICKER FFMPEG ERROR]", ffErr.message);
+      console.error("[STICKER FFMPEG STDERR]", ffErr.stderr);
+      throw ffErr;
+    }
+
+    const webpStats = await fs.stat(webpPath);
+    console.log("[STICKER] webp generado, tamaño:", webpStats.size);
 
     let webpBuffer = await fs.readFile(webpPath);
 
