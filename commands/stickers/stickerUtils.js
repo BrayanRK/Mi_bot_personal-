@@ -1,159 +1,244 @@
-import Jimp from "jimp";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs-extra";
+import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { exec } from "child_process";
+import { promisify } from "util";
+import { fileTypeFromBuffer } from "file-type";
+import webp from "node-webpmux";
 import { TEMP_DIR } from "../../config.js";
 
 const execAsync = promisify(exec);
 
-// ─── EXIF de sticker (pack/author) sin depender de wa-sticker-formatter ──────
-// Construye el bloque EXIF WebP que WhatsApp lee para mostrar pack/autor.
-function buildExif(pack, author, categories = []) {
-  const json = {
-    "sticker-pack-id": crypto.randomBytes(16).toString("hex"),
-    "sticker-pack-name": pack || "",
-    "sticker-pack-publisher": author || "",
-    "emojis": categories.length ? categories : ["🤩"],
-  };
+if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-  const jsonBuffer = Buffer.from(JSON.stringify(json), "utf8");
+const MAX_INPUT_SIZE = 50 * 1024 * 1024;
 
-  const exifHeader = Buffer.from([
-    0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00,
-    0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x16, 0x00, 0x00, 0x00,
-  ]);
-
-  exifHeader.writeUIntLE(jsonBuffer.length, 14, 4);
-
-  return Buffer.concat([exifHeader, jsonBuffer]);
+function run(cmd, timeoutMs = 60000) {
+  return execAsync(cmd, { maxBuffer: 1024 * 1024 * 50, timeout: timeoutMs });
 }
 
-// Inyecta el chunk EXIF dentro de un buffer WebP existente
-function injectExifIntoWebp(webpBuffer, exifBuffer) {
-  const EXIF_HEADER = Buffer.from("EXIF");
-  const exifChunk = Buffer.concat([
-    EXIF_HEADER,
-    Buffer.from([
-      exifBuffer.length & 0xff,
-      (exifBuffer.length >> 8) & 0xff,
-      (exifBuffer.length >> 16) & 0xff,
-      (exifBuffer.length >> 24) & 0xff,
-    ]),
-    exifBuffer,
-  ]);
-
-  // Padding a múltiplo de 2 (formato RIFF lo exige)
-  const padded = exifChunk.length % 2 !== 0
-    ? Buffer.concat([exifChunk, Buffer.from([0x00])])
-    : exifChunk;
-
-  const fileSize = webpBuffer.readUInt32LE(4);
-  const newFileSize = fileSize + padded.length;
-
-  const out = Buffer.concat([
-    webpBuffer.slice(0, 4),
-    Buffer.from([
-      newFileSize & 0xff,
-      (newFileSize >> 8) & 0xff,
-      (newFileSize >> 16) & 0xff,
-      (newFileSize >> 24) & 0xff,
-    ]),
-    webpBuffer.slice(8),
-    padded,
-  ]);
-
-  return out;
+// ─── Cola secuencial para no saturar CPU con varios stickers a la vez ────────
+let stickerQueue = Promise.resolve();
+function queueTask(fn) {
+  const result = stickerQueue.then(fn, fn);
+  stickerQueue = result.then(() => {}, () => {});
+  return result;
 }
 
-/**
- * Crea un sticker WebP estático a partir de un buffer de imagen.
- * Usa Jimp (puro JS, sin compilación nativa) + ffmpeg para la conversión a webp.
- */
-export async function crearStickerImagen(buffer, { pack, author, categories } = {}) {
-  await fs.ensureDir(TEMP_DIR);
-  const base = Date.now() + "_" + crypto.randomBytes(3).toString("hex");
-  const pngPath  = path.join(TEMP_DIR, `stk_${base}.png`);
-  const webpPath = path.join(TEMP_DIR, `stk_${base}.webp`);
+// ─── EXIF con node-webpmux (confiable, no corrompe el archivo) ───────────────
+async function addExif(webpBuffer, packname, author, categories = [""]) {
+  try {
+    const img = new webp.Image();
+    const json = {
+      "sticker-pack-id": crypto.randomBytes(32).toString("hex"),
+      "sticker-pack-name": packname || "🌸 Mitsuri Bot 🌸",
+      "sticker-pack-publisher": author || "Draven",
+      "emojis": categories,
+    };
+    const exifAttr = Buffer.from([
+      0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00,
+      0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
+    ]);
+    const jsonBuffer = Buffer.from(JSON.stringify(json), "utf8");
+    const exif = Buffer.concat([exifAttr, jsonBuffer]);
+    exif.writeUIntLE(jsonBuffer.length, 14, 4);
+
+    await img.load(webpBuffer);
+    img.exif = exif;
+    return await img.save(null);
+  } catch (e) {
+    console.error("[addExif error]", e.message);
+    return webpBuffer;
+  }
+}
+
+const scaleFilter = `scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000,format=rgba`;
+
+async function isAnimatedWebp(filePath) {
+  try {
+    const { stdout } = await run(
+      `ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "${filePath}"`,
+      15000
+    );
+    return parseInt(stdout.trim()) > 1;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Sticker estático ─────────────────────────────────────────────────────
+async function stickerEstaticoRaw(buffer) {
+  const type = await fileTypeFromBuffer(buffer);
+  if (!type || type.ext === "bin") throw new Error("Tipo de archivo no soportado");
+
+  const base   = Date.now();
+  const tmpIn  = path.join(TEMP_DIR, `s_${base}.${type.ext}`);
+  const tmpOut = path.join(TEMP_DIR, `s_${base}_out.webp`);
 
   try {
-    // Redimensionar/normalizar con Jimp (sin estirar, mantiene proporción + padding)
-    const image = await Jimp.read(buffer);
-    image.contain(512, 512, Jimp.HORIZONTAL_ALIGN_CENTER | Jimp.VERTICAL_ALIGN_MIDDLE);
-    await image.writeAsync(pngPath);
+    await fs.promises.writeFile(tmpIn, buffer);
 
-    // Convertir a WebP con ffmpeg
-    const cmd = `ffmpeg -y -i "${pngPath}" -vcodec libwebp -lossless 0 -qscale 75 -preset picture -an -vsync 0 "${webpPath}"`;
+    await run([
+      "ffmpeg -y -nostdin -threads 3",
+      `-i "${tmpIn}"`,
+      "-vcodec libwebp",
+      `-vf "${scaleFilter}"`,
+      "-pix_fmt yuva420p",
+      "-qscale:v 80",
+      "-preset picture",
+      `"${tmpOut}"`,
+    ].join(" "), 30000);
+
+    const buf = await fs.promises.readFile(tmpOut);
+    if (!buf || buf.length < 100) throw new Error("Webp estático inválido");
+    return buf;
+  } finally {
+    fs.promises.unlink(tmpIn).catch(() => {});
+    fs.promises.unlink(tmpOut).catch(() => {});
+  }
+}
+
+// ─── Sticker animado con reintentos progresivos ──────────────────────────────
+async function stickerAnimadoRaw(buffer) {
+  const type = await fileTypeFromBuffer(buffer);
+  if (!type || type.ext === "bin") throw new Error("Tipo de archivo no soportado");
+
+  const base   = Date.now();
+  const tmpIn  = path.join(TEMP_DIR, `a_${base}.${type.ext}`);
+  const tmpCut = path.join(TEMP_DIR, `a_${base}_cut.${type.ext}`);
+  const tmpOut = path.join(TEMP_DIR, `a_${base}_out.webp`);
+
+  try {
+    await fs.promises.writeFile(tmpIn, buffer);
+
+    const dur = 6;
+    let cutSource = tmpIn;
+
     try {
-      const { stdout, stderr } = await execAsync(cmd);
-      console.log("[STICKER FFMPEG STDOUT]", stdout);
-      console.log("[STICKER FFMPEG STDERR]", stderr);
-    } catch (ffErr) {
-      console.error("[STICKER FFMPEG ERROR]", ffErr.message);
-      console.error("[STICKER FFMPEG STDERR]", ffErr.stderr);
-      throw ffErr;
+      await run(
+        `ffmpeg -y -nostdin -threads 3 -i "${tmpIn}" -t ${dur} -c copy -avoid_negative_ts make_zero "${tmpCut}"`,
+        30000
+      );
+      const cutBuf = await fs.promises.readFile(tmpCut).catch(() => null);
+      if (cutBuf && cutBuf.length >= 100) cutSource = tmpCut;
+    } catch (e) {
+      console.error("[stickerAnimado] recorte rápido falló, probando recodificado:", e.message);
+      try {
+        await run(
+          `ffmpeg -y -nostdin -threads 3 -i "${tmpIn}" -t ${dur} -an "${tmpCut}"`,
+          60000
+        );
+        const cutBuf = await fs.promises.readFile(tmpCut).catch(() => null);
+        if (cutBuf && cutBuf.length >= 100) cutSource = tmpCut;
+      } catch (e2) {
+        console.error("[stickerAnimado] recorte recodificado también falló, uso original:", e2.message);
+      }
     }
 
-    const webpStats = await fs.stat(webpPath);
-    console.log("[STICKER] webp generado, tamaño:", webpStats.size);
+    const fps = 15;
 
-    let webpBuffer = await fs.readFile(webpPath);
+    const buildCmd = (fpsVal, qscale, compression, outPath) => [
+      "ffmpeg -y -nostdin -threads 3",
+      `-i "${cutSource}"`,
+      `-t ${dur}`,
+      "-an",
+      "-vcodec libwebp",
+      "-loop 0",
+      `-vf "${scaleFilter},fps=${fpsVal}"`,
+      "-pix_fmt yuva420p",
+      `-qscale:v ${qscale}`,
+      `-compression_level ${compression}`,
+      "-preset default",
+      `"${outPath}"`,
+    ].join(" ");
 
-    // TEMPORAL: EXIF deshabilitado para diagnosticar corrupción
-    // const exif = buildExif(pack, author, categories);
-    // webpBuffer = injectExifIntoWebp(webpBuffer, exif);
+    const attempts = [
+      { fps, q: 75, c: 5 },
+      { fps, q: 60, c: 6 },
+      { fps: 12, q: 55, c: 6 },
+      { fps: 10, q: 45, c: 6 },
+    ];
 
-    return webpBuffer;
+    let buf = null;
+    for (let i = 0; i < attempts.length; i++) {
+      const { fps: fpsVal, q, c } = attempts[i];
+      const out = i === 0 ? tmpOut : path.join(TEMP_DIR, `a_${base}_v${i}.webp`);
+      try {
+        await run(buildCmd(fpsVal, q, c, out), 120000);
+        const candidate = await fs.promises.readFile(out);
+        if (candidate.length >= 100) {
+          buf = candidate;
+          if (buf.length <= 500 * 1024) {
+            if (out !== tmpOut) fs.promises.unlink(out).catch(() => {});
+            break;
+          }
+        }
+      } catch (e) {
+        console.error(`[stickerAnimado] intento ${i} falló:`, e.message);
+      } finally {
+        if (out !== tmpOut) fs.promises.unlink(out).catch(() => {});
+      }
+    }
+
+    if (!buf) throw new Error("No se pudo convertir ese video en sticker, intenta con uno más corto o liviano.");
+    return buf;
   } finally {
-    fs.remove(pngPath).catch(() => {});
-    fs.remove(webpPath).catch(() => {});
+    fs.promises.unlink(tmpIn).catch(() => {});
+    fs.promises.unlink(tmpCut).catch(() => {});
+    fs.promises.unlink(tmpOut).catch(() => {});
   }
 }
 
-/**
- * Crea un sticker WebP animado a partir de un buffer de video.
- */
-export async function crearStickerVideo(buffer, { pack, author, categories, maxSeconds = 6 } = {}) {
-  await fs.ensureDir(TEMP_DIR);
-  const base = Date.now() + "_" + crypto.randomBytes(3).toString("hex");
-  const inputPath  = path.join(TEMP_DIR, `anim_${base}.mp4`);
-  const outputPath = path.join(TEMP_DIR, `anim_${base}.webp`);
-
-  try {
-    await fs.writeFile(inputPath, buffer);
-
-    const cmd = `ffmpeg -y -i "${inputPath}" -ss 0 -t ${maxSeconds} -an -vcodec libwebp -loop 0 -vsync 0 -vf "fps=8,scale=420:420:force_original_aspect_ratio=decrease,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000" -qscale 75 -preset picture "${outputPath}"`;
-    await execAsync(cmd);
-
-    let webpBuffer = await fs.readFile(outputPath);
-
-    const exif = buildExif(pack, author, categories);
-    webpBuffer = injectExifIntoWebp(webpBuffer, exif);
-
-    return webpBuffer;
-  } finally {
-    fs.remove(inputPath).catch(() => {});
-    fs.remove(outputPath).catch(() => {});
-  }
+function stickerEstatico(buffer) {
+  return queueTask(() => stickerEstaticoRaw(buffer));
 }
 
-/**
- * Convierte un sticker WebP a PNG (para .toimg). Usa ffmpeg.
- */
-export async function stickerAPng(stickerBuffer) {
-  await fs.ensureDir(TEMP_DIR);
+function stickerAnimadoQueue(buffer) {
+  return queueTask(() => stickerAnimadoRaw(buffer));
+}
+
+// ─── Función principal: detecta automáticamente estático vs animado ─────────
+async function sticker(buffer, opts = {}) {
+  if (!buffer || !buffer.length) throw new Error("Buffer vacío");
+  if (buffer.length > MAX_INPUT_SIZE) throw new Error("Ese archivo está muy pesado (máx 50MB).");
+
+  const packname   = opts.packname   || "🌸 Mitsuri Bot 🌸";
+  const author     = opts.author     || "Draven";
+  const categories = opts.categories || [""];
+
+  const type = await fileTypeFromBuffer(buffer) || {};
+  let isAnimated = /video/i.test(type.mime) || type.mime === "image/gif";
+
+  if (!isAnimated && type.ext === "webp") {
+    const base = Date.now();
+    const probePath = path.join(TEMP_DIR, `probe_${base}.webp`);
+    await fs.promises.writeFile(probePath, buffer);
+    isAnimated = await isAnimatedWebp(probePath);
+    fs.promises.unlink(probePath).catch(() => {});
+  }
+
+  const raw = isAnimated
+    ? await stickerAnimadoQueue(buffer)
+    : await stickerEstatico(buffer);
+
+  return addExif(raw, packname, author, categories);
+}
+
+// ─── Conversión sticker → png (para .toimg) ──────────────────────────────────
+async function stickerAPng(stickerBuffer) {
   const base = Date.now() + "_" + crypto.randomBytes(3).toString("hex");
   const webpPath = path.join(TEMP_DIR, `conv_${base}.webp`);
   const pngPath  = path.join(TEMP_DIR, `conv_${base}.png`);
 
   try {
-    await fs.writeFile(webpPath, stickerBuffer);
-    await execAsync(`ffmpeg -y -i "${webpPath}" "${pngPath}"`);
-    return await fs.readFile(pngPath);
+    await fs.promises.writeFile(webpPath, stickerBuffer);
+    await run(`ffmpeg -y -i "${webpPath}" "${pngPath}"`, 30000);
+    return await fs.promises.readFile(pngPath);
   } finally {
-    fs.remove(webpPath).catch(() => {});
-    fs.remove(pngPath).catch(() => {});
+    fs.promises.unlink(webpPath).catch(() => {});
+    fs.promises.unlink(pngPath).catch(() => {});
   }
 }
+
+export { sticker, stickerAPng };
