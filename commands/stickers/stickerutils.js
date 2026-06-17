@@ -1,4 +1,4 @@
-import { Jimp } from "jimp";
+import Jimp from "jimp";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs-extra";
@@ -81,8 +81,8 @@ export async function crearStickerImagen(buffer, { pack, author, categories } = 
   try {
     // Redimensionar/normalizar con Jimp (sin estirar, mantiene proporción + padding)
     const image = await Jimp.read(buffer);
-    image.contain({ w: 512, h: 512 });
-    await image.write(pngPath);
+    image.contain(512, 512, Jimp.HORIZONTAL_ALIGN_CENTER | Jimp.VERTICAL_ALIGN_MIDDLE);
+    await image.writeAsync(pngPath);
 
     // Convertir a WebP con ffmpeg
     const cmd = `ffmpeg -y -i "${pngPath}" -vcodec libwebp -lossless 0 -qscale 75 -preset picture -an -vsync 0 "${webpPath}"`;
