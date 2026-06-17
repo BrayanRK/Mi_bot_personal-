@@ -1,5 +1,5 @@
 import { downloadMediaMessage } from "fsociety-Baileys";
-import { crearStickerImagen, crearStickerVideo } from "./stickerUtils.js";
+import { sticker } from "./stickerUtils.js";
 
 const PACK   = "𝒱𝒶𝓁ℯ𝓃𝓉𝒾𝓃𝒶 ℬℴ𝓉❤️";
 const AUTHOR = "Draven 🏴‍☠️";
@@ -26,11 +26,16 @@ export default {
         ? msg
         : { message: quoted, key: msg.key };
 
-      const buffer = await downloadMediaMessage(mediaMsg, "buffer", {});
+      const buffer = await downloadMediaMessage(
+        mediaMsg, "buffer", {},
+        { reuploadRequest: sock.updateMediaMessage }
+      );
 
-      const stickerBuffer = isVideo
-        ? await crearStickerVideo(buffer, { pack: PACK, author: AUTHOR, categories: ["🤩", "🎉"] })
-        : await crearStickerImagen(buffer, { pack: PACK, author: AUTHOR, categories: ["🤩", "🎉"] });
+      const stickerBuffer = await sticker(buffer, {
+        packname: PACK,
+        author: AUTHOR,
+        categories: ["🤩", "🎉"],
+      });
 
       await sock.sendMessage(jid, { sticker: stickerBuffer }, { quoted: msg });
 
