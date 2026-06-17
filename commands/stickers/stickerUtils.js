@@ -101,9 +101,9 @@ export async function crearStickerImagen(buffer, { pack, author, categories } = 
 
     let webpBuffer = await fs.readFile(webpPath);
 
-    // Inyectar metadatos pack/author
-    const exif = buildExif(pack, author, categories);
-    webpBuffer = injectExifIntoWebp(webpBuffer, exif);
+    // TEMPORAL: EXIF deshabilitado para diagnosticar corrupción
+    // const exif = buildExif(pack, author, categories);
+    // webpBuffer = injectExifIntoWebp(webpBuffer, exif);
 
     return webpBuffer;
   } finally {
