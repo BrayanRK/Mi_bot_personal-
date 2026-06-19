@@ -4,7 +4,7 @@ dotenv.config();
 export const CONFIG = {
   ownerNumber: "573223090406",
   botName: "𝘮𝘪𝘵𝘴𝘶𝘳𝘪 𝘣𝘰𝘵❤️",
-  prefix: ".",
+  prefix: "/",
   sessionDir: "./session",
   frase: "𝘓𝘢 𝘭𝘭𝘢𝘮𝘢 𝘲𝘶𝘦 𝘯𝘶𝘯𝘤𝘢 𝘴𝘦 𝘢𝘱𝘢𝘨𝘢 ❤️🔥",
 };
